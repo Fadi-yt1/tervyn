@@ -2,7 +2,7 @@
 //   npx wrangler deploy          (uses wrangler.toml in the repo root)
 import { createGateway } from '../../gateway/core.js';
 import { streamHtml, canStream } from '../../gateway/htmlrewriter.js';
-import { exitFetch } from '../../gateway/tunnel.js';
+import { exitFetch, checkExits } from '../../gateway/tunnel.js';
 import { createRemoteExits } from '../../gateway/exits-remote.js';
 import { connect } from 'cloudflare:sockets';
 
@@ -58,6 +58,11 @@ export default {
       },
       info: (req) => ({ colo: req.cf?.colo || '', country: req.cf?.country || '' }),
     });
+    const path = new URL(request.url).pathname;
+    if (path === '/__tervyn/exits/check' && exits) {
+      const cc = (new URL(request.url).searchParams.get('cc') || 'US').toUpperCase().slice(0, 2);
+      return Response.json({ country: cc, results: await checkExits(openSocket, exits, cc) }, { headers: { 'cache-control': 'no-store' } });
+    }
     return gateway(request, {
       clientIp: request.headers.get('cf-connecting-ip') || '',
       waitUntil: (p) => ctx.waitUntil(p),

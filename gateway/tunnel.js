@@ -137,14 +137,17 @@ export async function fetchViaProxy(openSocket, proxy, url, init = {}, body = nu
   let sock;
   let br;
   let writer;
+  let stage = 'connect';
   const close = () => { try { writer?.releaseLock(); } catch { /* ignore */ } try { sock?.close(); } catch { /* closed */ } };
   try {
     await withTimeout((async () => {
       sock = await openSocket(proxy.address, proxy.port);
       br = new ByteReader(sock.readable);
       writer = sock.writable.getWriter();
+      stage = 'proxy-handshake';
       await handshake(br, writer, proxy, u.hostname, port);
       if (secure) {
+        stage = 'tls';
         if (br.buf.length) throw new Error('proxy sent unexpected data');
         br.release(); writer.releaseLock();
         sock = await sock.startTls(u.hostname);
@@ -155,8 +158,10 @@ export async function fetchViaProxy(openSocket, proxy, url, init = {}, body = nu
   } catch (e) {
     close();
     e.tunnel = true;
+    e.stage = stage;
     throw e;
   }
+  stage = 'request';
   if (init.signal) init.signal.addEventListener('abort', close, { once: true });
 
   const lines = [`${init.method || 'GET'} ${u.pathname}${u.search} HTTP/1.1`, `Host: ${u.host}`];
@@ -168,7 +173,7 @@ export async function fetchViaProxy(openSocket, proxy, url, init = {}, body = nu
       await writer.write(enc.encode(lines.join('\r\n') + '\r\n\r\n'));
       if (body?.byteLength) await writer.write(body);
     })(), HANDSHAKE_MS, 'sending through the free proxy timed out');
-  } catch (e) { close(); e.tunnel = true; throw e; }
+  } catch (e) { close(); e.tunnel = true; e.stage = stage; throw e; }
 
   // Response head (skip 1xx informational answers).
   let status = 0;
@@ -179,7 +184,7 @@ export async function fetchViaProxy(openSocket, proxy, url, init = {}, body = nu
       status = parseInt(headLines[0].slice(9, 12), 10);
       if (!(status >= 100 && status < 200)) break;
     }
-  } catch (e) { close(); e.tunnel = true; throw e; }
+  } catch (e) { close(); e.tunnel = true; e.stage = 'response'; throw e; }
   if (!(status >= 200 && status <= 599)) { close(); const e = new Error('bad response from site'); e.tunnel = true; throw e; }
 
   const headers = new Headers();
@@ -222,4 +227,18 @@ export function exitFetch({ baseFetch, openSocket, exits, tries = 3 }) {
     }
     throw new Error(`The free servers in ${meta.exit} didn't answer (${String(last?.message || last).slice(0, 120)}). Try again or pick another country.`);
   };
+}
+
+// Diagnostics: try a few proxies of one country and report where each one stops.
+export async function checkExits(openSocket, exits, code, target = 'https://api.ipify.org/?format=json', n = 5) {
+  const list = await exits.pick(code, n);
+  return Promise.all(list.map(async (p) => {
+    const t0 = Date.now();
+    try {
+      const r = await fetchViaProxy(openSocket, p, target);
+      return { proxy: `${p.proto}://${p.address}:${p.port}`, ok: true, status: r.status, ms: Date.now() - t0, body: (await r.text()).slice(0, 120) };
+    } catch (e) {
+      return { proxy: `${p.proto}://${p.address}:${p.port}`, ok: false, stage: e.stage || '?', ms: Date.now() - t0, error: String(e.message || e).slice(0, 160) };
+    }
+  }));
 }
