@@ -1,4 +1,8 @@
 {
   "_comment": "Every deployed Tervyn gateway. The home page tests all of them and uses the fastest. Add each URL after you deploy it (no trailing slash), then run `npm run build` and redeploy. The GATEWAYS environment variable (comma separated) adds more at runtime.",
-  "gateways": []
+  "gateways": [
+    "https://tervyn-gateway.tervyn-fadi-yt1.workers.dev",
+    "https://tervyn.vercel.app",
+    "https://tervyn-fadi-yt1.netlify.app"
+  ]
 }
