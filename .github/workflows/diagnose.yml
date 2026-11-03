@@ -32,4 +32,4 @@ jobs:
       - name: Same tunnel code from GitHub's servers, and the Cloudflare gateway's own check
         run: |
           node scripts/check-exits.mjs "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/proxies/proxies.json" US CA DE || true
-          for cc in US CA DE; do echo "== cloudflare check $cc"; curl -s -m 90 "https://tervyn-gateway.tervyn-fadi-yt1.workers.dev/__tervyn/exits/check?cc=$cc"; echo; done
+          for cc in US CA DE; do for t in http https; do echo "== cloudflare check $cc $t"; curl -s -m 90 "https://tervyn-gateway.tervyn-fadi-yt1.workers.dev/__tervyn/exits/check?cc=$cc&target=$t"; echo; done; done

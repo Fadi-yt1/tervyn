@@ -61,7 +61,8 @@ export default {
     const path = new URL(request.url).pathname;
     if (path === '/__tervyn/exits/check' && exits) {
       const cc = (new URL(request.url).searchParams.get('cc') || 'US').toUpperCase().slice(0, 2);
-      return Response.json({ country: cc, results: await checkExits(openSocket, exits, cc) }, { headers: { 'cache-control': 'no-store' } });
+      const t = new URL(request.url).searchParams.get('target') === 'http' ? 'http://api.ipify.org/?format=json' : 'https://api.ipify.org/?format=json';
+      return Response.json({ country: cc, target: t, results: await checkExits(openSocket, exits, cc, t) }, { headers: { 'cache-control': 'no-store' } });
     }
     return gateway(request, {
       clientIp: request.headers.get('cf-connecting-ip') || '',
