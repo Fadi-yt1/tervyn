@@ -50,7 +50,7 @@ Open http://localhost:8080 and type a site. Needs Node 20+ and no `npm install`,
 
 | Platform | Secret(s) | Where to get it |
 |---|---|---|
-| Cloudflare Workers | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | dash.cloudflare.com → My Profile → API Tokens → "Edit Cloudflare Workers" template. The account ID is on the Workers & Pages overview. Open Workers & Pages once so you get a `workers.dev` subdomain. |
+| Cloudflare Workers | `CLOUDFLARE_API_TOKEN` (+ `CLOUDFLARE_ACCOUNT_ID` only if the token can see several accounts) | dash.cloudflare.com → My Profile → API Tokens → "Edit Cloudflare Workers" template. The account ID is on the Workers & Pages overview. Open Workers & Pages once so you get a `workers.dev` subdomain. |
 | Vercel | `VERCEL_TOKEN` | vercel.com → Account Settings → Tokens. The project `tervyn` is created on the first deploy. |
 | Netlify | `NETLIFY_AUTH_TOKEN` | app.netlify.com → User settings → Applications → Personal access tokens. The site `tervyn-<owner>` is created on the first deploy. |
 
