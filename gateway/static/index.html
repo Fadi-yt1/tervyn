@@ -36,6 +36,10 @@
   .loc label { font-weight: 600; font-size: 15px; min-width: 5.6em; }
   .loc select { flex: 1; max-width: 420px; min-width: 0; font: inherit; font-size: 15px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
   .note { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+  .browserCard { display: block; margin-top: 18px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--text); text-decoration: none; }
+  .browserCard:hover { border-color: var(--accent); }
+  .browserCard b { display: block; margin-bottom: 2px; }
+  .browserCard span { color: var(--muted); font-size: 14px; }
   .quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
   .quick button { border: 1px solid var(--line); background: var(--chip); color: var(--text); border-radius: 999px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
   .quick button:hover { border-color: var(--accent); }
@@ -81,6 +85,10 @@
     <span id="status">Finding the fastest gateway…</span>
   </div>
   <div class="quick" id="quick"></div>
+  <a class="browserCard" id="browserCard" href="#" hidden rel="noreferrer">
+    <b>Sites with "verify you are human" checks?</b>
+    <span>Open the Tervyn Browser: a real Chrome on our server, through your Webshare servers. You complete the check yourself, like on your own computer.</span>
+  </a>
 
   <section>
     <h2>Gateways <button type="button" id="retest">Test again</button></h2>
@@ -261,6 +269,7 @@
   function load() {
     fetch(PORTAL ? 'gateways.json' : '/__tervyn/gateways', { cache: 'no-store' }).then(function (r) { return r.json(); })
       .then(function (d) {
+        if (/^https:\/\//.test(d.browser || '')) { $('browserCard').href = d.browser; $('browserCard').hidden = false; }
         var list = (d.gateways || []).map(function (g) { return String(g).replace(/\/+$/, ''); }).filter(Boolean);
         testAll(PORTAL ? list : (list.length ? list : [location.origin]));
       })

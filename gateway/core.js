@@ -4,7 +4,7 @@
 
 import { PREFIX, decodeTarget, encodeTarget, normalizeInput, checkTarget } from './url.js';
 import { rewriteHtml, rewriteCss, rewriteSetCookie, rewriteLocation, rewriteLinkHeader } from './rewrite.js';
-import { ASSETS, GATEWAYS } from './assets.js';
+import { ASSETS, GATEWAYS, BROWSER_URL } from './assets.js';
 
 export const VERSION = '1.0.0';
 
@@ -187,7 +187,7 @@ export function createGateway(options = {}) {
       return json({ ok: true, name: 'tervyn-gateway', version: VERSION, platform: options.platform || 'unknown', exits: !!(options.exits || options.exitsElsewhere), t: Date.now(), ...extra });
     }
     if (path === '/__tervyn/gateways') {
-      return json({ self: url.origin, gateways: [...new Set([url.origin, ...gateways])] });
+      return json({ self: url.origin, gateways: [...new Set([url.origin, ...gateways])], browser: options.browserUrl || BROWSER_URL || '' });
     }
     if (path === '/__tervyn/exits') {
       return json({

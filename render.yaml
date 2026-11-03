@@ -18,3 +18,24 @@ services:
         value: Render
       - key: CACHE_MB
         value: "64"
+
+  # Tervyn Browser: a real Chrome you use from a web page, through your Webshare servers.
+  # After creating it, set PRIVATE_PROXIES in the Render dashboard (Environment). The
+  # access key is generated for you: copy it from the same page.
+  # Render's free plan has 512 MB of memory: enough for one session at a time.
+  - type: web
+    name: tervyn-browser
+    runtime: docker
+    plan: free
+    dockerfilePath: ./browser/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: ACCESS_KEY
+        generateValue: true
+      - key: PRIVATE_PROXIES
+        sync: false
+      - key: MAX_SESSIONS
+        value: "1"
+      - key: IDLE_MINUTES
+        value: "10"

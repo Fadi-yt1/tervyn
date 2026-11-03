@@ -20,3 +20,19 @@ jobs:
           npm i --no-save playwright@1.63.0
           npx playwright install --with-deps chromium
           npm run e2e
+      - name: Remote browser (real Chrome, driven through its streamed screen)
+        run: |
+          cd browser && npm ci
+          npx playwright install --with-deps chromium
+          node test.mjs
+  browser-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the remote browser image and check it starts
+        run: |
+          docker build -f browser/Dockerfile -t tervyn-browser .
+          docker run -d --name tb -p 8090:8090 -e ACCESS_KEY=ci-key tervyn-browser
+          for i in $(seq 1 30); do curl -fsS localhost:8090/health && break; sleep 2; done
+          curl -fsS "localhost:8090/api/servers?key=ci-key"
+          docker logs tb | tail -20

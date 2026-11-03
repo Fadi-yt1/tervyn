@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Tervyn Browser</title>
+<style>
+  :root { --bg: #0f131a; --bar: #171d27; --line: #273041; --text: #e8ecf4; --muted: #96a0b3; --accent: #6b8fff; --input: #202838; }
+  @media (prefers-color-scheme: light) { :root { --bg: #e9edf4; --bar: #ffffff; --line: #dfe4ee; --text: #182030; --muted: #5d6779; --accent: #4f7cff; --input: #eef2fa; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  .bar { display: flex; gap: 6px; align-items: center; padding: 6px 8px; background: var(--bar); border-bottom: 1px solid var(--line); }
+  .bar button, .bar select { font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; cursor: pointer; }
+  .bar button:hover { border-color: var(--accent); }
+  .bar form { flex: 1; display: flex; min-width: 0; }
+  .bar input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  .bar input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .bar select { max-width: 13em; }
+  #status { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  #screen { position: absolute; top: 47px; left: 0; right: 0; bottom: 0; }
+  canvas { width: 100%; height: 100%; display: block; background: #fff; cursor: default; touch-action: none; outline: none; }
+  #kb { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; resize: none; }
+  .overlay { position: absolute; inset: 47px 0 0 0; display: flex; align-items: center; justify-content: center; background: var(--bg); padding: 16px; }
+  .card { background: var(--bar); border: 1px solid var(--line); border-radius: 14px; padding: 22px; max-width: 420px; width: 100%; }
+  .card h1 { font-size: 20px; margin: 0 0 6px; }
+  .card p { color: var(--muted); margin: 0 0 14px; }
+  .card input, .card select { width: 100%; font: inherit; color: var(--text); background: var(--input); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; margin-bottom: 10px; }
+  .card button { width: 100%; font: inherit; font-weight: 600; color: #fff; background: var(--accent); border: 0; border-radius: 9px; padding: 11px; cursor: pointer; }
+  .err { color: #f07070; min-height: 1.2em; margin-top: 8px; }
+  [hidden] { display: none !important; }
+  @media (max-width: 560px) { #status, .bar .wide { display: none; } }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button id="back" title="Back" aria-label="Back">←</button>
+  <button id="fwd" title="Forward" aria-label="Forward" class="wide">→</button>
+  <button id="reload" title="Reload" aria-label="Reload">⟳</button>
+  <form id="nav"><input id="url" placeholder="Type a site, e.g. truepeoplesearch.com" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Address"></form>
+  <select id="server" title="Connect through" aria-label="Connect through"><option value="">Direct (this server)</option></select>
+  <span id="status">Not connected</span>
+</div>
+<div id="screen">
+  <canvas id="c" tabindex="0" aria-label="Remote browser screen"></canvas>
+  <textarea id="kb" autocapitalize="off" autocomplete="off" spellcheck="false" aria-hidden="true"></textarea>
+</div>
+
+<div class="overlay" id="login">
+  <form class="card" id="loginForm">
+    <h1>Tervyn Browser</h1>
+    <p>A real Chrome running on the server, through your Webshare servers. Human checks run in it normally, and you complete them yourself.</p>
+    <input id="key" type="password" placeholder="Access key" autocomplete="current-password" aria-label="Access key">
+    <button type="submit">Start browser</button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+<div class="overlay" id="ended" hidden>
+  <div class="card">
+    <h1>Session ended</h1>
+    <p id="endedMsg">The browser was closed.</p>
+    <button id="again" type="button">Start again</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var store = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } },
+  };
+  var canvas = $('c'), ctx = canvas.getContext('2d'), kb = $('kb');
+  var ws = null, key = store.get('tervyn.browser.key') || '', remote = { w: 1280, h: 800 };
+
+  function size() {
+    var r = $('screen').getBoundingClientRect();
+    return { w: Math.max(320, Math.round(r.width)), h: Math.max(320, Math.round(r.height)) };
+  }
+  function status(t) { $('status').textContent = t; }
+
+  function loadServers() {
+    return fetch('/api/servers?key=' + encodeURIComponent(key), { cache: 'no-store' }).then(function (r) {
+      if (r.status === 401) throw new Error('Wrong access key.');
+      return r.json();
+    }).then(function (d) {
+      var sel = $('server'); sel.length = 1;
+      (d.servers || []).forEach(function (s) {
+        var o = document.createElement('option');
+        o.value = s.id; o.textContent = 'Server ' + s.id.slice(1) + ' · ' + s.address;
+        sel.appendChild(o);
+      });
+      var saved = store.get('tervyn.browser.server') || ((d.servers || [])[0] || {}).id || '';
+      if ([].some.call(sel.options, function (o) { return o.value === saved; })) sel.value = saved;
+      return d;
+    });
+  }
+
+  function connect() {
+    var s = size();
+    canvas.width = s.w; canvas.height = s.h;
+    var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    ws = new WebSocket(proto + location.host + '/ws?key=' + encodeURIComponent(key) + '&server=' + encodeURIComponent($('server').value) + '&w=' + s.w + '&h=' + s.h);
+    ws.binaryType = 'blob';
+    status('Starting Chrome…');
+    ws.onmessage = function (e) {
+      if (typeof e.data !== 'string') {
+        createImageBitmap(e.data).then(function (bmp) {
+          ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+          bmp.close && bmp.close();
+        }).catch(function () {});
+        return;
+      }
+      var m = JSON.parse(e.data);
+      if (m.t === 'ready') { remote = { w: m.w, h: m.h }; status($('server').value ? 'Via server ' + $('server').value.slice(1) : 'Direct'); canvas.focus(); if (!$('url').value) $('url').focus(); }
+      else if (m.t === 'state') { if (document.activeElement !== $('url')) $('url').value = m.url === 'about:blank' ? '' : m.url; document.title = (m.title ? m.title + ' · ' : '') + 'Tervyn Browser'; }
+      else if (m.t === 'notice') { status(m.msg); }
+      else if (m.t === 'error') { $('endedMsg').textContent = m.msg; }
+    };
+    ws.onclose = function () { ws = null; status('Not connected'); $('ended').hidden = false; };
+  }
+  function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+
+  // ---- start ----
+  $('loginForm').onsubmit = function (e) {
+    e.preventDefault();
+    key = $('key').value.trim();
+    $('loginErr').textContent = '';
+    loadServers().then(function () { store.set('tervyn.browser.key', key); $('login').hidden = true; connect(); })
+      .catch(function (err) { $('loginErr').textContent = err.message; });
+  };
+  if (key) { $('key').value = key; loadServers().then(function () { $('login').hidden = true; connect(); }).catch(function () { /* ask again */ }); }
+  $('again').onclick = function () { $('ended').hidden = true; connect(); };
+  $('server').onchange = function () {
+    store.set('tervyn.browser.server', this.value);
+    // A different server needs a fresh browser session; keep the page you were on.
+    var url = $('url').value;
+    if (ws) { ws.onclose = function () { ws = null; connect(); if (url) setTimeout(function () { send({ t: 'go', url: url }); }, 1500); }; ws.close(); }
+  };
+
+  // ---- toolbar ----
+  $('nav').onsubmit = function (e) { e.preventDefault(); send({ t: 'go', url: $('url').value }); canvas.focus(); };
+  $('back').onclick = function () { send({ t: 'back' }); };
+  $('fwd').onclick = function () { send({ t: 'forward' }); };
+  $('reload').onclick = function () { send({ t: 'reload' }); };
+
+  // ---- mouse & touch ----
+  function pos(e) {
+    var r = canvas.getBoundingClientRect();
+    return { x: Math.round((e.clientX - r.left) * remote.w / r.width), y: Math.round((e.clientY - r.top) * remote.h / r.height) };
+  }
+  var BUTTONS = ['left', 'middle', 'right'];
+  var lastMove = 0;
+  canvas.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    // Focus the hidden text box so phones open their keyboard and typing goes to Chrome.
+    kb.focus({ preventScroll: true });
+    canvas.setPointerCapture(e.pointerId);
+    var p = pos(e); send({ t: 'down', x: p.x, y: p.y, button: BUTTONS[e.button] || 'left', clicks: e.detail || 1 });
+  });
+  canvas.addEventListener('pointerup', function (e) {
+    var p = pos(e); send({ t: 'up', x: p.x, y: p.y, button: BUTTONS[e.button] || 'left', clicks: e.detail || 1 });
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    var now = performance.now();
+    if (now - lastMove < 30 && !e.buttons) return; // at most ~30 moves a second unless dragging
+    lastMove = now;
+    var p = pos(e); send({ t: 'move', x: p.x, y: p.y });
+  });
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var p = pos(e); send({ t: 'wheel', x: p.x, y: p.y, dx: e.deltaX, dy: e.deltaY });
+  }, { passive: false });
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  // ---- keyboard: special keys and shortcuts go as keys, text goes as text ----
+  var SPECIAL = /^(Enter|Tab|Backspace|Delete|Escape|Arrow(Up|Down|Left|Right)|Home|End|PageUp|PageDown|F\d{1,2}|Shift|Control|Alt|Meta)$/;
+  function keyHandler(type) {
+    return function (e) {
+      var combo = (e.ctrlKey || e.metaKey) && e.key.length === 1;
+      if (SPECIAL.test(e.key) || combo) {
+        if (combo && /^[vV]$/.test(e.key) && type === 'keydown') return; // paste: handled below as text
+        e.preventDefault();
+        var k = combo ? (e.ctrlKey ? 'Control+' : 'Meta+') + e.key : e.key;
+        if (combo) { if (type === 'keydown') { send({ t: 'keydown', key: e.ctrlKey ? 'Control' : 'Meta' }); send({ t: 'keydown', key: e.key }); send({ t: 'keyup', key: e.key }); send({ t: 'keyup', key: e.ctrlKey ? 'Control' : 'Meta' }); } return; }
+        send({ t: type, key: k });
+      }
+    };
+  }
+  kb.addEventListener('keydown', keyHandler('keydown'));
+  kb.addEventListener('keyup', keyHandler('keyup'));
+  kb.addEventListener('input', function () { if (kb.value) { send({ t: 'text', text: kb.value }); kb.value = ''; } });
+  kb.addEventListener('paste', function (e) {
+    var t = (e.clipboardData || window.clipboardData).getData('text');
+    if (t) { e.preventDefault(); send({ t: 'text', text: t }); }
+  });
+  canvas.addEventListener('keydown', function () { kb.focus({ preventScroll: true }); });
+
+  // ---- window size ----
+  var rt;
+  window.addEventListener('resize', function () {
+    clearTimeout(rt);
+    rt = setTimeout(function () { var s = size(); canvas.width = s.w; canvas.height = s.h; remote = { w: s.w, h: s.h }; send({ t: 'resize', w: s.w, h: s.h }); }, 250);
+  });
+})();
+</script>
+</body>
+</html>
