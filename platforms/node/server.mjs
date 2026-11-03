@@ -25,15 +25,19 @@ import { createMemoryCache } from './cache.mjs';
 import { createExitPool } from './exits.mjs';
 import { createRemoteExits } from '../../gateway/exits-remote.js';
 import { createPrivateExits } from './private-exits.mjs';
+import { combineExits } from '../../gateway/exits-combined.js';
 
 const COMPRESSIBLE = /^(text\/|application\/(javascript|json|xml|xhtml\+xml|manifest\+json|ld\+json)|image\/svg\+xml)/i;
 
 export function createNodeGateway(env = process.env) {
   // PROXY_LIST_URL: use the published, pre-tested list. EXITS=1: test free lists on this server.
-  // PRIVATE_PROXIES: only your own proxies (e.g. Webshare, with logins).
-  const exits = env.PRIVATE_PROXIES ? createPrivateExits({ text: env.PRIVATE_PROXIES, log: console.log })
-    : env.PROXY_LIST_URL ? createRemoteExits({ url: env.PROXY_LIST_URL })
-    : env.EXITS === '1' ? createExitPool() : null;
+  // Free public servers by country (PROXY_LIST_URL, or EXITS=1 to test them here), plus
+  // your own servers (PRIVATE_PROXIES, e.g. Webshare) as a separate menu.
+  const publicExits = env.PROXY_LIST_URL ? createRemoteExits({ url: env.PROXY_LIST_URL }) : env.EXITS === '1' ? createExitPool() : null;
+  const exits = combineExits({
+    publicExits,
+    privateExits: env.PRIVATE_PROXIES ? createPrivateExits({ text: env.PRIVATE_PROXIES, log: console.log }) : null,
+  });
   const cacheMb = Number(env.CACHE_MB ?? 128);
   const allowPrivate = env.ALLOW_PRIVATE === '1';
   const handler = createGateway({
@@ -123,14 +127,14 @@ export function createNodeGateway(env = process.env) {
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 66000;
   server.requestTimeout = 0; // long downloads and streams are fine
-  return { server, exits, listener };
+  return { server, exits, listener, publicExits };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { server, exits } = createNodeGateway();
+  const { server, exits, publicExits } = createNodeGateway();
   const port = Number(process.env.PORT || 8080);
   server.listen(port, process.env.HOST || '0.0.0.0', () => {
     console.log(`Tervyn gateway on http://localhost:${port}${exits ? ' (free exit countries on)' : ''}`);
-    exits?.start?.();
+    publicExits?.start?.(); // EXITS=1: test the free lists in the background
   });
 }

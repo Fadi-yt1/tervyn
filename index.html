@@ -35,7 +35,7 @@
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; color: var(--muted); font-size: 14px; }
   .row select { padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); max-width: 100%; }
   .loc { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
-  .loc label { font-weight: 600; font-size: 15px; }
+  .loc label { font-weight: 600; font-size: 15px; min-width: 5.6em; }
   .loc select { flex: 1; max-width: 420px; min-width: 0; font: inherit; font-size: 15px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
   .note { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
   .quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
@@ -70,6 +70,11 @@
     <select id="exit" aria-describedby="exitNote"><option value="">Fastest gateway (no country)</option></select>
   </div>
   <p class="note" id="exitNote">Pick a country to open sites through a free server there, e.g. the USA or Canada.</p>
+  <div class="loc" id="wsWrap" hidden>
+    <label for="ws">Webshare</label>
+    <select id="ws"><option value="">Not using a Webshare server</option></select>
+  </div>
+  <p class="note" id="wsNote" hidden>Your own Webshare servers. Picking one overrides Location.</p>
   <form class="go" id="go">
     <input id="url" name="url" placeholder="Type a site, e.g. wikipedia.org" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus aria-label="Website address">
     <button class="btn" id="goBtn" type="submit">Go</button>
@@ -159,7 +164,7 @@
 
   function update() {
     var g = routeGateway();
-    var exit = $('exit').value;
+    var exit = chosenExit();
     if (!gateways.length) { $('status').textContent = 'No gateways are online yet. Please check back soon.'; }
     else if (!g && exit) { $('status').textContent = 'Waiting for a gateway that supports countries…'; }
     else if (!g) { $('status').textContent = gateways.some(function (x) { return x.ms == null && !x.error; }) ? 'Finding the fastest gateway…' : 'No gateway answered. Try again in a minute.'; }
@@ -177,6 +182,7 @@
   function exitGateways() {
     return gateways.filter(function (x) { return x.ms != null && x.info && x.info.exits; }).sort(function (a, b) { return a.ms - b.ms; });
   }
+  function chosenExit() { return $('ws').value || $('exit').value; }
   var exitsLoaded = false;
   var countryNames = {};
   function loadExits() {
@@ -198,25 +204,38 @@
         }
         var o = document.createElement('option');
         o.value = c.code;
-        o.textContent = (flag(c.code) ? flag(c.code) + ' ' : '') + c.name + ' — ' + c.count + (d.source === 'private' ? ' server' : ' free server') + (c.count === 1 ? '' : 's');
+        o.textContent = (flag(c.code) ? flag(c.code) + ' ' : '') + c.name + ' — ' + c.count + ' free server' + (c.count === 1 ? '' : 's');
         countryNames[c.code] = c.name;
         if (c.code === saved) o.selected = true;
         sel.appendChild(o);
       });
-      $('exitNote').textContent = list.length && d.source === 'private'
-        ? 'Private servers in ' + list.length + (list.length === 1 ? ' country.' : ' countries.') + ' Sites that block web proxies (bot checks) still need the Tervyn extension.'
-        : list.length
+      $('exitNote').textContent = list.length
         ? list.length + ' countries with tested free servers. They are slower than the gateways and run by strangers: don\'t log in to anything important.'
         : 'No tested free servers right now. Browsing still works through the fastest gateway.';
+      // Your Webshare servers: their own section.
+      var ws = $('ws');
+      var savedWs = store.get('tervyn.ws') || '';
+      ws.length = 1;
+      (d.servers || []).forEach(function (sv) {
+        var o = document.createElement('option');
+        o.value = sv.id;
+        o.textContent = 'Server ' + sv.id.slice(1) + ' — ' + (flag(sv.code) ? flag(sv.code) + ' ' : '') + sv.name + ' · ' + sv.address + (sv.ms ? ' · ' + sv.ms + ' ms' : '');
+        countryNames[sv.id] = 'Webshare server ' + sv.id.slice(1) + ' (' + sv.name + ')';
+        if (sv.id === savedWs) o.selected = true;
+        ws.appendChild(o);
+      });
+      $('wsWrap').hidden = $('wsNote').hidden = !(d.servers || []).length;
       update();
     }).catch(function () { exitsLoaded = false; });
   }
   // With a country picked, go through the fastest gateway that can use free proxies.
   function routeGateway() {
-    if ($('exit').value) return exitGateways()[0] || null;
+    if (chosenExit()) return exitGateways()[0] || null;
     return gateways.find(function (x) { return x.url === chosen && x.ms != null; }) || null;
   }
-  $('exit').onchange = function () { store.set('tervyn.exit', this.value); update(); };
+  // The two sections are exclusive: picking one clears the other.
+  $('exit').onchange = function () { store.set('tervyn.exit', this.value); if (this.value) { $('ws').value = ''; store.set('tervyn.ws', ''); } update(); };
+  $('ws').onchange = function () { store.set('tervyn.ws', this.value); if (this.value) { $('exit').value = ''; store.set('tervyn.exit', ''); } update(); };
 
   function testAll(list) {
     gateways = list.map(function (url) { return { url: url, ms: null }; });
@@ -255,7 +274,7 @@
     if (!v) return;
     var g = routeGateway();
     if (!g) return;
-    var exit = $('exit').value;
+    var exit = chosenExit();
     location.href = g.url + '/go?url=' + encodeURIComponent(v) + '&exit=' + encodeURIComponent(exit);
   }
   $('go').onsubmit = function (e) { e.preventDefault(); go(); };

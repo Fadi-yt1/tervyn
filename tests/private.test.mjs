@@ -61,10 +61,34 @@ test('only your proxies are offered; logins are never shown', async () => {
   const gw = createGateway({ platform: 'test', allowPrivate: true, exits, fetch: createUpstream({ allowPrivate: true, exits }) });
   const list = await (await gw(new Request('https://gw.test/__tervyn/exits'))).text();
   assert.deepEqual(JSON.parse(list).countries.map((c) => [c.code, c.count]), [['US', 2]]);
-  assert.doesNotMatch(list, /127\.0\.0\.1|"u"|"p"/, 'no addresses or logins leak');
+  assert.doesNotMatch(list, /"u"|"p"|user|pass/, 'logins never leak (server IPs are shown on purpose)');
   for (let i = 0; i < 4; i++) {
     const r = await gw(new Request(`https://gw.test/p/http/127.0.0.1:${sitePort}/x${i}`, { headers: { cookie: 'tervyn_exit=US' } }));
     assert.equal(r.headers.get('x-tervyn-exit'), 'US');
     assert.match(await r.text(), new RegExp(`hi /x${i}`));
   }
+});
+
+test('Webshare servers are a separate list; "P2" picks server 2 and rotates its logins', async () => {
+  const { combineExits } = await import('../gateway/exits-combined.js');
+  const text = `127.0.0.1:${fake.authConnectPort}:u:p socks5://u:p@127.0.0.1:${fake.authSocksPort} socks5://u:wrong@127.0.0.1:${fake.authSocksPort}`;
+  const priv = createPrivateExits({ text, test: async () => ({ code: 'CA', ms: 7 }) });
+  const pub = { countries: async () => [{ code: 'US', name: 'United States', count: 5, ms: 9 }], pick: async () => [] };
+  const exits = combineExits({ publicExits: pub, privateExits: priv });
+  const gw = createGateway({ platform: 'test', allowPrivate: true, exits, fetch: createUpstream({ allowPrivate: true, exits }) });
+  const d = await (await gw(new Request('https://gw.test/__tervyn/exits'))).json();
+  assert.deepEqual(d.countries.map((c) => c.code), ['US']);
+  assert.deepEqual(d.servers.map((s) => [s.id, s.code, s.accounts]), [['P1', 'CA', 1], ['P2', 'CA', 2]]);
+  assert.doesNotMatch(JSON.stringify(d), /"u"|"p"|wrong/);
+  const go = await gw(new Request('https://gw.test/go?url=example.com&exit=p2'));
+  assert.match(go.headers.get('set-cookie'), /tervyn_exit=P2/);
+  // Server 2 has a good and a bad login: requests still succeed (the bad one is skipped).
+  for (let i = 0; i < 4; i++) {
+    const r = await gw(new Request(`https://gw.test/p/http/127.0.0.1:${sitePort}/s${i}`, { headers: { cookie: 'tervyn_exit=P2' } }));
+    assert.equal(r.status, 200);
+    assert.match(await r.text(), new RegExp(`hi /s${i}`));
+  }
+  const none = await gw(new Request(`https://gw.test/p/http/127.0.0.1:${sitePort}/`, { headers: { cookie: 'tervyn_exit=P9' } }));
+  assert.equal(none.status, 502);
+  assert.match(await none.text(), /Server 9 didn/);
 });

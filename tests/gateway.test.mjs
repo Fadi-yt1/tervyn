@@ -87,7 +87,7 @@ before(async () => {
   const cport = await listen(connectProxy);
   const sport = await listen(socksProxy);
 
-  ({ server: gw, exits } = createNodeGateway({ ALLOW_PRIVATE: '1', EXITS: '1', CACHE_MB: '16', RATE_LIMIT: '0', GATEWAYS: 'https://a.example, https://b.example/' }));
+  ({ server: gw, publicExits: exits } = createNodeGateway({ ALLOW_PRIVATE: '1', EXITS: '1', CACHE_MB: '16', RATE_LIMIT: '0', GATEWAYS: 'https://a.example, https://b.example/' }));
   exits._set([
     { proto: 'http', address: '127.0.0.1', port: cport, code: 'DE', ms: 5, fails: 0 },
     { proto: 'socks5', address: '127.0.0.1', port: sport, code: 'JP', ms: 7, fails: 0 },
@@ -221,16 +221,14 @@ test('own pages carry security headers; about page and favicon exist', async () 
   assert.equal((await (await fetch(gwUrl + '/__tervyn/health')).json()).ok, true);
 });
 
-test('bot-check pages are explained instead of shown broken', async () => {
+test('human-check pages are shown as they are (so you can complete them), with a toolbar hint', async () => {
   const r = await fetch(p('/challenge'), { headers: { 'sec-fetch-dest': 'document' } });
   assert.equal(r.status, 403);
-  assert.equal(r.headers.get('x-tervyn-blocked'), 'bot-check');
+  assert.equal(r.headers.get('x-tervyn-check'), 'human');
   const html = await r.text();
-  assert.match(html, /blocks web proxies/);
-  assert.match(html, /Open 127\.0\.0\.1 directly/);
-  // Background requests (fetch/XHR) get the site's own answer.
-  const bg = await fetch(p('/challenge'), { headers: { 'sec-fetch-dest': 'empty' } });
-  assert.equal(bg.headers.get('x-tervyn-blocked'), null);
+  assert.match(html, /<title>Just a moment\.\.\.<\/title>/, "the site's own page");
+  assert.match(html, /%22h%22%3A1/, 'toolbar told to show the hint');
+  assert.doesNotMatch(html, /blocks web proxies/);
 });
 
 test('a page that breaks off mid-way gives a clear error, not a crash', async () => {

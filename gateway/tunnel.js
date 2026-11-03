@@ -221,7 +221,7 @@ export function exitFetch({ baseFetch, openSocket, exits, tries = 3 }) {
   return async (url, init = {}, meta = {}) => {
     if (!meta.exit || !exits) return baseFetch(url, init, meta);
     const proxies = await exits.pick(meta.exit, tries);
-    if (!proxies.length) throw new Error(`No working free server in ${meta.exit} right now. Pick another country, or browse without one.`);
+    if (!proxies.length) throw new Error(`${/^P\d+$/.test(meta.exit) ? `Your server ${meta.exit.slice(1)} isn't answering` : `No working free server in ${meta.exit}`} right now. Pick another location, or browse without one.`);
     const body = init.body ? new Uint8Array(await new Response(init.body).arrayBuffer()) : null;
     let last;
     for (const p of proxies) {
@@ -235,7 +235,7 @@ export function exitFetch({ baseFetch, openSocket, exits, tries = 3 }) {
         exits.fail?.(p);
       }
     }
-    throw new Error(`The free servers in ${meta.exit} didn't answer (${String(last?.message || last).slice(0, 120)}). Try again or pick another country.`);
+    throw new Error(`The ${/^P\d+$/.test(meta.exit) ? `server ${meta.exit.slice(1)}` : `free servers in ${meta.exit}`} didn't answer (${String(last?.message || last).slice(0, 120)}). Try again or pick another country.`);
   };
 }
 

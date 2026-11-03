@@ -136,7 +136,8 @@ export function createUpstream({ allowPrivate = false, exits = null } = {}) {
   };
   const exitPools = new Map();
   const agentsFor = (proxy) => {
-    const key = `${proxy.proto}://${proxy.address}:${proxy.port}`;
+    // Per login too: Webshare gives several accounts on the same IP:port.
+    const key = `${proxy.proto}://${proxy.user || ""}:${proxy.pass || ""}@${proxy.address}:${proxy.port}`;
     if (!exitPools.has(key)) exitPools.set(key, exitAgents(proxy));
     return exitPools.get(key);
   };
@@ -175,7 +176,7 @@ export function createUpstream({ allowPrivate = false, exits = null } = {}) {
     const proto = new URL(url).protocol;
     if (meta.exit && exits) {
       const proxies = await exits.pick(meta.exit, 3);
-      if (!proxies.length) throw new Error(`no working free exit server in ${meta.exit} right now; pick another exit`);
+      if (!proxies.length) throw new Error(/^P\d+$/.test(meta.exit) ? `Your server ${meta.exit.slice(1)} isn't answering right now. Pick another one.` : `No working free server in ${meta.exit} right now. Pick another location.`);
       const retryable = !init.body;
       let last;
       for (const p of proxies) {

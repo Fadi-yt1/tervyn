@@ -68,3 +68,10 @@ jobs:
             curl -s -m 60 -D h.txt -o b.txt -H "cookie: tervyn_exit=$cc" "https://tervyn.vercel.app/p/https/api.ipify.org/?format=json"
             echo "vercel $cc -> $(head -1 h.txt | tr -d '\r') $(grep -i '^x-tervyn-exit' h.txt | tr -d '\r') $(sed -e 's/<[^>]*>/ /g' b.txt | tr -s ' \n' ' ' | head -c 200)"
           done
+      - name: Webshare servers on Vercel
+        run: |
+          curl -s -m 60 https://tervyn.vercel.app/__tervyn/exits | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const j=JSON.parse(d);console.log("servers:",(j.servers||[]).map(s=>s.id+" "+s.code+" "+s.address+" ("+s.accounts+" logins)").join(", ")||"none")})'
+          for id in P1 P2 P3; do
+            curl -s -m 60 -D h.txt -o b.txt -H "cookie: tervyn_exit=$id" "https://tervyn.vercel.app/p/https/api.ipify.org/?format=json"
+            echo "$id -> $(head -1 h.txt | tr -d '\r') $(grep -i '^x-tervyn-exit' h.txt | tr -d '\r') $(sed -e 's/<[^>]*>/ /g' b.txt | tr -s ' \n' ' ' | head -c 160)"
+          done

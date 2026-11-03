@@ -42,6 +42,13 @@ export function parsePrivateProxies(text, defaultProto = 'http') {
 
 export function createPrivateExits({ text, test = testProxy, recheckMs = 15 * 60 * 1000, log = () => {} }) {
   const all = parsePrivateProxies(text);
+  // One "server" per address:port (P1, P2, ...), in list order; its logins (accounts) rotate.
+  const serverIds = new Map();
+  for (const p of all) {
+    const k = `${p.address}:${p.port}`;
+    if (!serverIds.has(k)) serverIds.set(k, `P${serverIds.size + 1}`);
+    p.server = serverIds.get(k);
+  }
   let working = [];
   let checkedAt = 0;
   let checking = null;
@@ -80,10 +87,21 @@ export function createPrivateExits({ text, test = testProxy, recheckMs = 15 * 60
       }
       return [...by.values()].sort((a, b) => a.name.localeCompare(b.name));
     },
-    // Round-robin across your proxies (and accounts), skipping ones that just failed.
+    // Your servers, one entry per address, for the "Webshare servers" menu. No logins.
+    async servers() {
+      await ready();
+      const by = new Map();
+      for (const p of working) {
+        const s = by.get(p.server) || { id: p.server, address: p.address, code: p.code, name: countryName(p.code), ms: p.ms, accounts: 0 };
+        s.accounts++; s.ms = Math.min(s.ms, p.ms);
+        by.set(p.server, s);
+      }
+      return [...by.values()].sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+    },
+    // A country code picks any of your servers there; "P3" picks server 3 (rotating its logins).
     async pick(code, n = 3) {
       await ready();
-      const pool = working.filter((p) => p.code === code);
+      const pool = working.filter((p) => (/^P\d+$/.test(code) ? p.server === code : p.code === code));
       const fresh = pool.filter(usable);
       const list = fresh.length ? fresh : pool;
       if (!list.length) return [];

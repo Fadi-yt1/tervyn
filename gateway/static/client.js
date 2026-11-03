@@ -167,7 +167,7 @@
     // Windows has no flag emoji (shows "us"), so flags are only used elsewhere.
     var noFlags = /Windows/.test(navigator.userAgent);
     var flag = function (c) { return !noFlags && /^[A-Z]{2}$/.test(c) ? String.fromCodePoint.apply(null, c.split('').map(function (x) { return 0x1f1e6 + x.charCodeAt(0) - 65; })) + ' ' : ''; };
-    var region = cfg.x ? 'via ' + flag(cfg.x) + cfg.x : (cfg.p || 'gateway');
+    var region = /^P\d+$/.test(cfg.x || '') ? 'via server ' + cfg.x.slice(1) : cfg.x ? 'via ' + flag(cfg.x) + cfg.x : (cfg.p || 'gateway');
     root.innerHTML =
       '<style>' +
       ':host{all:initial;position:fixed;left:12px;bottom:12px;z-index:2147483647;font:13px/1.3 system-ui,-apple-system,Segoe UI,sans-serif}' +
@@ -191,19 +191,30 @@
     var lbl = root.querySelector('.lbl');
     var input = root.querySelector('input');
     lbl.textContent = 'Tervyn · ' + (t ? t.hostname : '') + ' · ' + region;
+    if (cfg.h) {
+      lbl.textContent = 'Human check on this page. If it keeps failing, use the Tervyn extension';
+      lbl.title = 'Complete the check on the page. Some checks (e.g. Cloudflare) only pass when your browser connects to the site directly; the Tervyn VPN extension does that through a proxy.';
+    }
     var cc = root.querySelector('.cc');
     var ccLoaded = false;
     function loadCountries() {
       if (ccLoaded) return;
       ccLoaded = true;
       realFetch.call(window, '/__tervyn/exits', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (d) {
-        (d.countries || []).forEach(function (c) {
-          var o = document.createElement('option');
-          o.value = c.code; o.textContent = flag(c.code) + c.name;
-          if (c.code === cfg.x) o.selected = true;
-          cc.appendChild(o);
-        });
-        cc.hidden = !(d.countries || []).length;
+        var group = function (label, items) {
+          if (!items.length) return;
+          var g = document.createElement('optgroup'); g.label = label;
+          items.forEach(function (it) {
+            var o = document.createElement('option');
+            o.value = it[0]; o.textContent = it[1];
+            if (it[0] === cfg.x) o.selected = true;
+            g.appendChild(o);
+          });
+          cc.appendChild(g);
+        };
+        group('Webshare servers', (d.servers || []).map(function (sv) { return [sv.id, 'Server ' + sv.id.slice(1) + ' · ' + flag(sv.code) + sv.name]; }));
+        group('Free servers by country', (d.countries || []).map(function (c) { return [c.code, flag(c.code) + c.name]; }));
+        cc.hidden = !((d.countries || []).length || (d.servers || []).length);
       }).catch(function () { /* this gateway has no countries */ });
     }
     // Switching country reloads this page through a free server in that country.

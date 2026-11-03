@@ -57,31 +57,12 @@ function errorPage(status, title, detail, target, extra = '') {
   );
 }
 
-// Bot checks (Cloudflare challenge and similar) only pass in a real browser on the real
-// site address, never through a web proxy. Spot them and explain instead of showing a broken page.
+// Spots sites showing a human check (Cloudflare challenge and similar).
 function isBotCheck(res) {
   const h = res.headers;
   if ((h.get('cf-mitigated') || '').toLowerCase() === 'challenge') return true;
   if (res.status === 403 && /akamai|imperva|incapsula|datadome|perimeterx|kasada/i.test(`${h.get('server')} ${h.get('x-datadome') ? 'datadome' : ''} ${h.get('x-iinfo') ? 'incapsula' : ''}`)) return true;
   return false;
-}
-
-function botCheckPage(target, exit) {
-  const esc = escapeHtml;
-  const host = esc(target.hostname);
-  const other = exit ? `<a class="b" href="/go?url=${encodeURIComponent(target.href)}&amp;exit=">Try without a country</a>` : '';
-  return new Response(
-    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${host} blocks web proxies</title>` +
-    `<style>body{font:16px/1.55 system-ui,sans-serif;max-width:38rem;margin:3.5rem auto;padding:0 16px;color:#1d2433;background:#f6f7fb}h1{font-size:24px}` +
-    `.b{display:inline-block;margin:6px 8px 0 0;padding:9px 14px;border-radius:10px;background:#4f7cff;color:#fff;text-decoration:none}.b.s{background:#e3e8f3;color:#1d2433}` +
-    `@media(prefers-color-scheme:dark){body{background:#11141b;color:#e6e9f0}.b.s{background:#273041;color:#e6e9f0}a{color:#8ab4ff}}</style>` +
-    `<h1>${host} blocks web proxies</h1>` +
-    `<p>This site is protected by a bot check (for example Cloudflare's "verify you are human"). That check only works when your own browser talks to ${host} directly, so it fails through any web proxy, with or without a country.</p>` +
-    `<p><b>What works:</b></p><ul><li><b>Open it directly</b>: your real connection, no proxy.</li>` +
-    `<li><b>The Tervyn VPN extension</b>: it routes your whole browser, so the check runs normally and can pass.</li></ul>` +
-    `<p><a class="b" href="${esc(target.href)}" rel="noreferrer">Open ${host} directly</a><a class="b s" href="https://github.com/Fadi-yt1/vpn" rel="noreferrer">Get the extension</a>${other}<a class="b s" href="/">Tervyn home</a></p>`,
-    { status: 403, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-tervyn-blocked': 'bot-check' } },
-  );
 }
 
 function stoppedPage(target, exit, e) {
@@ -209,7 +190,11 @@ export function createGateway(options = {}) {
       return json({ self: url.origin, gateways: [...new Set([url.origin, ...gateways])] });
     }
     if (path === '/__tervyn/exits') {
-      return json({ countries: options.exits ? await options.exits.countries() : [], source: options.exits?.source || 'public' });
+      return json({
+        countries: options.exits ? await options.exits.countries() : [],
+        servers: options.exits?.servers ? await options.exits.servers() : [],
+        source: options.exits?.source || 'public',
+      });
     }
     if (path === '/robots.txt') {
       return new Response('User-agent: *\nDisallow: /\n', { headers: { 'content-type': 'text/plain' } });
@@ -219,7 +204,8 @@ export function createGateway(options = {}) {
       if (!target) return Response.redirect(new URL('/', url), 302);
       const headers = new Headers({ location: encodeTarget(target), 'cache-control': 'no-store' });
       if (url.searchParams.has('exit')) {
-        const exit = (url.searchParams.get('exit') || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2);
+        const raw = (url.searchParams.get('exit') || '').toUpperCase();
+        const exit = /^([A-Z]{2}|P\d{1,3})$/.test(raw) ? raw : '';
         headers.append('set-cookie', `tervyn_exit=${exit}; Path=/; Max-Age=31536000; SameSite=Lax; Secure; HttpOnly`);
       }
       return new Response(null, { status: 302, headers });
@@ -274,7 +260,8 @@ export function createGateway(options = {}) {
       } catch { /* drop it */ }
     }
 
-    const exit = getCookie(request.headers.get('cookie'), 'tervyn_exit');
+    const exitRaw = getCookie(request.headers.get('cookie'), 'tervyn_exit');
+    const exit = /^([A-Z]{2}|P\d{1,3})$/.test(exitRaw) ? exitRaw : '';
 
     if ((request.headers.get('upgrade') || '').toLowerCase() === 'websocket') {
       if (!options.websocket) return new Response('WebSockets are not supported on this gateway. Pick another gateway on the Tervyn home page.', { status: 501 });
@@ -327,7 +314,7 @@ export function createGateway(options = {}) {
     } catch (e) {
       const msg = String(e?.message || e);
       const noExit = exit ? `<p><a href="/go?url=${encodeURIComponent(target.href)}&amp;exit=">Browse this site without a country</a> · <a href="/">Pick another country</a></p>` : '';
-      return errorPage(502, exit ? `The ${exit} free servers didn't connect` : "Couldn't reach this site",
+      return errorPage(502, exit ? (/^P\d+$/.test(exit) ? `Server ${exit.slice(1)} didn't connect` : `The ${exit} free servers didn't connect`) : "Couldn't reach this site",
         exit ? msg.slice(0, 300) : `The gateway could not connect to ${target.host}. ${msg.slice(0, 200)}`, target, noExit);
     }
     const upstreamMs = Date.now() - started;
@@ -357,15 +344,14 @@ export function createGateway(options = {}) {
     const type = upstream.headers.get('content-type') || '';
     const dest = request.headers.get('sec-fetch-dest') || '';
     const isPageLoad = (!dest || dest === 'document' || dest === 'iframe') && /text\/html/i.test(type) && request.method === 'GET';
-    if (isPageLoad && isBotCheck(upstream)) {
-      try { await upstream.body?.cancel(); } catch { /* ignore */ }
-      return botCheckPage(target, exit);
-    }
+    // Sites with a human check (e.g. Cloudflare) are shown as they are, so you can complete it.
+    const botCheck = isPageLoad && isBotCheck(upstream);
+    if (botCheck) out.set('x-tervyn-check', 'human');
     const isHtml = /text\/html|application\/xhtml/i.test(type) && dest !== 'script' && dest !== 'style';
     const isCss = /text\/css/i.test(type);
 
     if (isHtml) {
-      const inject = `<script src="/__tervyn/client.js" data-tervyn="${encodeURIComponent(JSON.stringify({ u: target.href, p: options.label || options.platform || '', x: exit || '' }))}"></script>`;
+      const inject = `<script src="/__tervyn/client.js" data-tervyn="${encodeURIComponent(JSON.stringify({ u: target.href, p: options.label || options.platform || '', x: exit || '', ...(botCheck ? { h: 1 } : {}) }))}"></script>`;
       out.set('cache-control', 'no-cache, private');
       if (options.streamHtml && options.streamHtml.canStream(type)) {
         // Cloudflare: native streaming rewriter (low CPU, no buffering).
