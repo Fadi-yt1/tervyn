@@ -10,6 +10,7 @@
 //   GATEWAYS      other gateway URLs, comma separated (added to gateways.json)
 //   EXITS=1       offer free exit countries (tests the public free proxy lists)
 //   PROXY_LIST_URL  use the published pre-tested list instead (proxies.json)
+//   PRIVATE_PROXIES your own proxies only (ip:port:user:pass ...); takes priority over the others
 //   REGION        label shown in the gateway list, e.g. "Frankfurt"
 //   TRUST_PROXY=1 read the client IP and scheme from X-Forwarded-* (when behind Caddy)
 //   RATE_LIMIT    requests per minute per IP (default 900)
@@ -23,12 +24,15 @@ import { createUpstream, bridgeWebSocket } from './upstream.mjs';
 import { createMemoryCache } from './cache.mjs';
 import { createExitPool } from './exits.mjs';
 import { createRemoteExits } from '../../gateway/exits-remote.js';
+import { createPrivateExits } from './private-exits.mjs';
 
 const COMPRESSIBLE = /^(text\/|application\/(javascript|json|xml|xhtml\+xml|manifest\+json|ld\+json)|image\/svg\+xml)/i;
 
 export function createNodeGateway(env = process.env) {
   // PROXY_LIST_URL: use the published, pre-tested list. EXITS=1: test free lists on this server.
-  const exits = env.PROXY_LIST_URL ? createRemoteExits({ url: env.PROXY_LIST_URL })
+  // PRIVATE_PROXIES: only your own proxies (e.g. Webshare, with logins).
+  const exits = env.PRIVATE_PROXIES ? createPrivateExits({ text: env.PRIVATE_PROXIES, log: console.log })
+    : env.PROXY_LIST_URL ? createRemoteExits({ url: env.PROXY_LIST_URL })
     : env.EXITS === '1' ? createExitPool() : null;
   const cacheMb = Number(env.CACHE_MB ?? 128);
   const allowPrivate = env.ALLOW_PRIVATE === '1';

@@ -198,12 +198,14 @@
         }
         var o = document.createElement('option');
         o.value = c.code;
-        o.textContent = (flag(c.code) ? flag(c.code) + ' ' : '') + c.name + ' — ' + c.count + ' free server' + (c.count === 1 ? '' : 's');
+        o.textContent = (flag(c.code) ? flag(c.code) + ' ' : '') + c.name + ' — ' + c.count + (d.source === 'private' ? ' server' : ' free server') + (c.count === 1 ? '' : 's');
         countryNames[c.code] = c.name;
         if (c.code === saved) o.selected = true;
         sel.appendChild(o);
       });
-      $('exitNote').textContent = list.length
+      $('exitNote').textContent = list.length && d.source === 'private'
+        ? 'Private servers in ' + list.length + (list.length === 1 ? ' country.' : ' countries.') + ' Sites that block web proxies (bot checks) still need the Tervyn extension.'
+        : list.length
         ? list.length + ' countries with tested free servers. They are slower than the gateways and run by strangers: don\'t log in to anything important.'
         : 'No tested free servers right now. Browsing still works through the fastest gateway.';
       update();

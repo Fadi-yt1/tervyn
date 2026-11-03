@@ -209,7 +209,7 @@ export function createGateway(options = {}) {
       return json({ self: url.origin, gateways: [...new Set([url.origin, ...gateways])] });
     }
     if (path === '/__tervyn/exits') {
-      return json({ countries: options.exits ? await options.exits.countries() : [] });
+      return json({ countries: options.exits ? await options.exits.countries() : [], source: options.exits?.source || 'public' });
     }
     if (path === '/robots.txt') {
       return new Response('User-agent: *\nDisallow: /\n', { headers: { 'content-type': 'text/plain' } });

@@ -70,7 +70,14 @@ deploy_vercel() {
   mkdir -p "$stage/platforms"
   cp -r api gateway scripts vercel.json package.json gateways.json "$stage/"
   cp -r platforms/static platforms/node "$stage/platforms/"
-  out=$(cd "$stage" && $VERCEL deploy --prod --yes --token "$VERCEL_TOKEN" 2>&1); echo "$out" | tail -25
+  # Your own proxies (PRIVATE_PROXIES secret) go to Vercel as a private runtime variable,
+  # never into the repo. New lines become spaces.
+  local envargs=()
+  if [ -n "${PRIVATE_PROXIES:-}" ]; then
+    envargs=(-e "PRIVATE_PROXIES=$(printf '%s' "$PRIVATE_PROXIES" | tr '\r\n' '  ' | tr -s ' ')")
+    echo "private proxies: $(printf '%s' "$PRIVATE_PROXIES" | grep -cE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+') entries"
+  fi
+  out=$(cd "$stage" && $VERCEL deploy --prod --yes --token "$VERCEL_TOKEN" "${envargs[@]}" 2>&1); echo "$out" | tail -25
   dep=$(echo "$out" | grep -oE 'https://[^ ]+\.vercel\.app' | tail -1)
   echo "deployment: $dep"
   if [ -n "$dep" ]; then

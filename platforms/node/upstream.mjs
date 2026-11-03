@@ -65,14 +65,23 @@ export async function openTunnel(proxy, host, port, ms = 8000) {
       socket.once('error', (e) => { clearTimeout(t); reject(e); });
     });
     if (proxy.proto === 'http') {
-      socket.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n\r\n`);
+      const auth = proxy.user ? `Proxy-Authorization: Basic ${Buffer.from(`${proxy.user}:${proxy.pass || ''}`).toString('base64')}\r\n` : '';
+      socket.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n${auth}\r\n`);
       const head = await readUntil(socket, (b) => { const i = b.indexOf('\r\n\r\n'); return i < 0 ? 0 : i + 4; }, ms);
       const line = head.toString('latin1').split('\r\n')[0];
       if (!/^HTTP\/1\.[01] 200/.test(line)) throw new Error(`proxy refused: ${line.slice(0, 60)}`);
     } else {
-      socket.write(Buffer.from([5, 1, 0]));
+      // Offer "no login", plus username/password when we have one (RFC 1929).
+      socket.write(Buffer.from(proxy.user ? [5, 2, 0, 2] : [5, 1, 0]));
       const hello = await readUntil(socket, (b) => (b.length >= 2 ? 2 : 0), ms);
-      if (hello[0] !== 5 || hello[1] !== 0) throw new Error('SOCKS5 proxy wants a login');
+      if (hello[0] !== 5 || (hello[1] !== 0 && hello[1] !== 2)) throw new Error('SOCKS5 proxy refused');
+      if (hello[1] === 2) {
+        if (!proxy.user) throw new Error('SOCKS5 proxy wants a login');
+        const u = Buffer.from(proxy.user); const pw = Buffer.from(proxy.pass || '');
+        socket.write(Buffer.concat([Buffer.from([1, u.length]), u, Buffer.from([pw.length]), pw]));
+        const ok = await readUntil(socket, (b) => (b.length >= 2 ? 2 : 0), ms);
+        if (ok[1] !== 0) throw new Error('SOCKS5 login rejected');
+      }
       const name = Buffer.from(host);
       socket.write(Buffer.concat([Buffer.from([5, 1, 0, 3, name.length]), name, Buffer.from([port >> 8, port & 255])]));
       const reply = await readUntil(socket, (b) => {

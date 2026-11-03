@@ -64,14 +64,24 @@ function withTimeout(p, ms, msg) {
 
 async function handshake(br, writer, proxy, host, port) {
   if (proxy.proto === 'http') {
-    await writer.write(enc.encode(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n\r\n`));
+    const auth = proxy.user ? `Proxy-Authorization: Basic ${btoa(`${proxy.user}:${proxy.pass || ''}`)}\r\n` : '';
+    await writer.write(enc.encode(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n${auth}\r\n`));
     const head = dec.decode(await br.readUntil(CRLF2, 16384));
     const line = head.split('\r\n')[0];
     if (!/^HTTP\/1\.[01] 200/.test(line)) throw new Error(`proxy refused: ${line.slice(0, 60)}`);
   } else {
-    await writer.write(new Uint8Array([5, 1, 0]));
+    await writer.write(new Uint8Array(proxy.user ? [5, 2, 0, 2] : [5, 1, 0]));
     const hello = await br.readExact(2);
-    if (hello[0] !== 5 || hello[1] !== 0) throw new Error('SOCKS5 proxy wants a login');
+    if (hello[0] !== 5 || (hello[1] !== 0 && hello[1] !== 2)) throw new Error('SOCKS5 proxy refused');
+    if (hello[1] === 2) {
+      if (!proxy.user) throw new Error('SOCKS5 proxy wants a login');
+      const u = enc.encode(proxy.user); const pw = enc.encode(proxy.pass || '');
+      const msg = new Uint8Array(3 + u.length + pw.length);
+      msg.set([1, u.length]); msg.set(u, 2); msg[2 + u.length] = pw.length; msg.set(pw, 3 + u.length);
+      await writer.write(msg);
+      const ok = await br.readExact(2);
+      if (ok[1] !== 0) throw new Error('SOCKS5 login rejected');
+    }
     const name = enc.encode(host);
     const req = new Uint8Array(7 + name.length);
     req.set([5, 1, 0, 3, name.length]); req.set(name, 5); req.set([port >> 8, port & 255], 5 + name.length);

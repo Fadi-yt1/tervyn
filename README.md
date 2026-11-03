@@ -38,6 +38,8 @@ Pick a **Location** on the home page, or in the toolbar on any page, and every s
 - **Which gateways support it:** Vercel (Node function) and self-hosted Node or Deno gateways. When you pick a country, the home page automatically uses a gateway that supports it. Cloudflare Workers can only tunnel plain HTTP: upgrading the tunnel to TLS fails there, so countries are turned off on Cloudflare (`EXITS=1` turns them on for testing). `/__tervyn/exits/check?cc=US` on the Cloudflare gateway shows where each proxy stops.
 - **Why not VPN Gate?** vpngate.net and similar sites hand out OpenVPN, L2TP and SSTP VPN servers. Websites, browsers and edge servers can't speak those protocols, so they can't be used here (or in a browser extension). Their desktop VPN client works for that.
 
+**Using your own proxies instead (e.g. Webshare):** add a repository secret named `PRIVATE_PROXIES` with your proxy list, one per line, in any layout (`ip:port:user:pass`, `user:pass@ip:port`, `socks5://user:pass@ip:port`). Then run the deploy workflow. The country menu then offers **only** your proxies, grouped by their real country, rotating across them. The logins stay in the secret and Vercel's private settings: they're never in the repo or shown on any page.
+
 Free proxies are slower than the gateways and are run by unknown people. HTTPS keeps the page content private, but don't log in to anything important through them.
 
 ## Try it locally (30 seconds)

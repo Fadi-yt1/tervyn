@@ -6,6 +6,8 @@
 #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID   Cloudflare Workers (free)
 #   VERCEL_TOKEN                                  Vercel Hobby (free)
 #   NETLIFY_AUTH_TOKEN                            Netlify Starter (free)
+#   PRIVATE_PROXIES     optional: your own proxies (e.g. Webshare ip:port:user:pass lines);
+#                       when set, the country menu uses ONLY these
 # Repository variables (… → Variables), optional:
 #   EXTRA_GATEWAYS      URLs of gateways deployed elsewhere (Deno Deploy, Render, VMs)
 #   NETLIFY_SITE_NAME   Netlify site name (default tervyn-<owner>)
@@ -28,6 +30,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      PRIVATE_PROXIES: ${{ secrets.PRIVATE_PROXIES }}
       EXTRA_GATEWAYS: ${{ vars.EXTRA_GATEWAYS }}
       NETLIFY_SITE_NAME: ${{ vars.NETLIFY_SITE_NAME }}
       CONTACT: ${{ vars.CONTACT }}
