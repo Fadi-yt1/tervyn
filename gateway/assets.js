@@ -8,5 +8,6 @@ export const ASSETS = {
 };
 export const GATEWAYS = [
  "https://tervyn-gateway.tervyn-fadi-yt1.workers.dev",
- "https://tervyn.vercel.app"
+ "https://tervyn.vercel.app",
+ "https://tervyn-fadi-yt1.netlify.app"
 ];
