@@ -18,6 +18,17 @@ VERCEL="npx --yes vercel@65.10.0"
 NETLIFY="npx --yes netlify-cli@27.16.2"
 OWNER=$(echo "${GITHUB_REPOSITORY_OWNER:-tervyn}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-\n' '-')
 NETLIFY_SITE_NAME=${NETLIFY_SITE_NAME:-tervyn-$OWNER}
+
+# Tokens pasted into the secrets page often carry spaces, newlines, quotes or a
+# "NAME: " / "NAME=" prefix. Keep only the token itself.
+clean() { printf '%s' "$1" | sed -E 's/^[[:space:]]*[A-Z_]+[[:space:]]*[:=][[:space:]]*//' | tr -d '[:space:]"'"'"; }
+CLOUDFLARE_API_TOKEN=$(clean "${CLOUDFLARE_API_TOKEN:-}"); export CLOUDFLARE_API_TOKEN
+CLOUDFLARE_ACCOUNT_ID=$(clean "${CLOUDFLARE_ACCOUNT_ID:-}"); [ -n "$CLOUDFLARE_ACCOUNT_ID" ] && export CLOUDFLARE_ACCOUNT_ID || unset CLOUDFLARE_ACCOUNT_ID
+VERCEL_TOKEN=$(clean "${VERCEL_TOKEN:-}")
+NETLIFY_AUTH_TOKEN=$(clean "${NETLIFY_AUTH_TOKEN:-}"); export NETLIFY_AUTH_TOKEN
+for t in CLOUDFLARE_API_TOKEN VERCEL_TOKEN NETLIFY_AUTH_TOKEN; do
+  v=${!t}; [ -n "$v" ] && echo "$t: ${#v} characters, starts with ${v:0:5}"
+done
 FOUND=()
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/stdout}
 log() { echo "::group::$*" 2>/dev/null || echo "== $*"; }
@@ -37,7 +48,9 @@ deploy_vercel() {
   [ -n "${VERCEL_TOKEN:-}" ] || return 0
   log "Vercel"
   local dep host alias
-  dep=$($VERCEL deploy --prod --yes --token "$VERCEL_TOKEN" 2>/dev/null | grep -oE 'https://[^ ]+\.vercel\.app' | tail -1)
+  local out
+  out=$($VERCEL deploy --prod --yes --token "$VERCEL_TOKEN" 2>&1); echo "$out" | tail -25
+  dep=$(echo "$out" | grep -oE 'https://[^ ]+\.vercel\.app' | tail -1)
   echo "deployment: $dep"
   if [ -n "$dep" ]; then
     host=${dep#https://}
@@ -56,6 +69,7 @@ deploy_netlify() {
   [ -n "${NETLIFY_AUTH_TOKEN:-}" ] || return 0
   log "Netlify"
   local api=https://api.netlify.com/api/v1 id url
+  echo "token check: HTTP $(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "$api/user")"
   id=$(curl -fsS -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "$api/sites?name=$NETLIFY_SITE_NAME&filter=all&per_page=100" \
     | jq -r --arg n "$NETLIFY_SITE_NAME" '[.[] | select(.name == $n)][0].id // empty')
   if [ -z "$id" ]; then
@@ -64,7 +78,10 @@ deploy_netlify() {
       -d "{\"name\":\"$NETLIFY_SITE_NAME\"}" "$api/sites" | jq -r '.id // empty')
   fi
   if [ -z "$id" ]; then echo "::warning::Could not find or create Netlify site $NETLIFY_SITE_NAME (name taken? set NETLIFY_SITE_NAME)"; end; return 0; fi
-  url=$($NETLIFY deploy --prod --site "$id" --auth "$NETLIFY_AUTH_TOKEN" --json 2>/dev/null | jq -r '.url // empty')
+  local out
+  out=$($NETLIFY deploy --prod --site "$id" --auth "$NETLIFY_AUTH_TOKEN" --json 2>&1)
+  url=$(echo "$out" | sed -n '/^{/,$p' | jq -r '.url // empty' 2>/dev/null)
+  [ -n "$url" ] || echo "$out" | tail -25
   [ -n "$url" ] && FOUND+=("$url") || echo "::warning::Netlify deploy failed"
   echo "url: $url"
   end
