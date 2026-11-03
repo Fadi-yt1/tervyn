@@ -1,0 +1,35 @@
+# Deploys the gateway to every free platform you've added a token for
+# (Settings → Secrets and variables → Actions). Platforms without a token are skipped.
+#   Cloudflare Workers: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+#   Vercel:             VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+#   Netlify:            NETLIFY_AUTH_TOKEN, NETLIFY_SITE_ID
+name: deploy
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm test
+      - name: Cloudflare Workers
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npx --yes wrangler@4.157.0 deploy
+      - name: Vercel
+        if: env.VERCEL_TOKEN != ''
+        run: npx --yes vercel@65.10.0 deploy --prod --yes --token "$VERCEL_TOKEN"
+      - name: Netlify
+        if: env.NETLIFY_AUTH_TOKEN != ''
+        run: npx --yes netlify-cli@27.16.2 deploy --prod --site "$NETLIFY_SITE_ID"

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node scripts/build-assets.mjs",
+  "outputDirectory": "platforms/static",
+  "rewrites": [{ "source": "/:path*", "destination": "/api/gateway?tervyn_path=/:path*" }]
+}

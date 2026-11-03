@@ -1,0 +1,12 @@
+# Caddy in front of the Node gateway: automatic HTTPS certificates, HTTP/2 and HTTP/3 (QUIC),
+# TLS 1.3 with session resumption. Set DOMAIN to a name that points at this server.
+{$DOMAIN} {
+	reverse_proxy gateway:8080 {
+		flush_interval -1
+		header_up X-Forwarded-Proto {scheme}
+		transport http {
+			keepalive 90s
+			keepalive_idle_conns 256
+		}
+	}
+}

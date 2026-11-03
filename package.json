@@ -1,0 +1,16 @@
+{
+  "name": "tervyn-web-proxy",
+  "version": "1.0.0",
+  "description": "Free, no-install web proxy for Tervyn VPN. One gateway that runs on every free hosting tier: Cloudflare Workers, Deno Deploy, Vercel Edge, Netlify Edge and Node.",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node scripts/build-assets.mjs",
+    "start": "node platforms/node/server.mjs",
+    "test": "node scripts/build-assets.mjs --check && node --test tests/*.test.mjs",
+    "e2e": "node tests/e2e.mjs",
+    "bench": "bash bench/compare.sh"
+  },
+  "license": "MIT"
+}

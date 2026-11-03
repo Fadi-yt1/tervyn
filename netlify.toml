@@ -1,0 +1,4 @@
+# Netlify: every path runs the edge function in netlify/edge-functions/gateway.js
+[build]
+  command = "node scripts/build-assets.mjs"
+  publish = "platforms/static"

@@ -1,0 +1,10 @@
+# Cloudflare Workers config for the Tervyn gateway.  Deploy: npx wrangler deploy
+name = "tervyn-gateway"
+main = "platforms/cloudflare/worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+[vars]
+# Other gateways, comma separated (gateways.json is built in already)
+GATEWAYS = ""
+RATE_LIMIT = "900"

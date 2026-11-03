@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+.vercel/
+.netlify/
+.deno/
+*.log
+.env

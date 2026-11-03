@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Tervyn Web Proxy</title>
+<meta name="description" content="Free web proxy. Open any site through the fastest free Tervyn gateway. Nothing to install.">
+<style>
+  :root {
+    --bg: #f5f7fb; --card: #ffffff; --text: #182030; --muted: #5d6779; --line: #e1e6ef;
+    --accent: #4f7cff; --accent-hover: #3d68ea; --ok: #12a370; --warn: #c07a00; --bad: #d14343;
+    --chip: #eef2fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f131a; --card: #171d27; --text: #e8ecf4; --muted: #96a0b3; --line: #273041;
+      --accent: #6b8fff; --accent-hover: #5a7ff2; --ok: #34d399; --warn: #f0b44c; --bad: #f07070; --chip: #202838; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: 30px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  form.go { display: flex; gap: 8px; }
+  form.go input { flex: 1; min-width: 0; font: inherit; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  form.go input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button, select { font: inherit; }
+  .btn { border: 0; border-radius: 12px; padding: 0 22px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: var(--accent-hover); }
+  .btn:disabled { opacity: .6; cursor: default; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; color: var(--muted); font-size: 14px; }
+  .row select { padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); max-width: 100%; }
+  .quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .quick button { border: 1px solid var(--line); background: var(--chip); color: var(--text); border-radius: 999px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
+  .quick button:hover { border-color: var(--accent); }
+  section { margin-top: 40px; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; }
+  h2 button { text-transform: none; letter-spacing: 0; border: 0; background: none; color: var(--accent); cursor: pointer; font-size: 14px; }
+  .list { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .gw { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--line); cursor: pointer; }
+  .gw:first-child { border-top: 0; }
+  .gw:hover { background: var(--chip); }
+  .gw input { margin: 0; accent-color: var(--accent); }
+  .gw .name { font-weight: 600; overflow-wrap: anywhere; }
+  .gw .meta { color: var(--muted); font-size: 13px; }
+  .ms { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; }
+  .ms.ok { color: var(--ok); } .ms.warn { color: var(--warn); } .ms.bad { color: var(--bad); }
+  .empty { padding: 14px; color: var(--muted); }
+  .notes { color: var(--muted); font-size: 14px; }
+  .notes li { margin: 4px 0; }
+  a { color: var(--accent); }
+  @media (max-width: 520px) { h1 { font-size: 25px; } main { padding-top: 28px; } form.go { flex-direction: column; } .btn { padding: 12px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tervyn <span>Web Proxy</span></h1>
+  <p class="sub">Open any site through the fastest free gateway. Nothing to install.</p>
+
+  <form class="go" id="go">
+    <input id="url" name="url" placeholder="Type a site, e.g. wikipedia.org" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus aria-label="Website address">
+    <button class="btn" id="goBtn" type="submit">Go</button>
+  </form>
+  <div class="row">
+    <span id="status">Finding the fastest gateway…</span>
+    <label id="exitWrap" hidden>· Exit:
+      <select id="exit"><option value="">Gateway location</option></select>
+    </label>
+  </div>
+  <div class="quick" id="quick"></div>
+
+  <section>
+    <h2>Gateways <button type="button" id="retest">Test again</button></h2>
+    <div class="list" id="gws"><div class="empty">Testing…</div></div>
+  </section>
+
+  <section class="notes">
+    <h2>Good to know</h2>
+    <ul>
+      <li>Gateways run on free hosting tiers around the world. Tervyn tests all of them and picks the fastest; pick another one any time.</li>
+      <li>Sites see the gateway's address, not yours. The gateway can see which sites you open and their content, so avoid banking and other sensitive logins.</li>
+      <li>"Exit" countries route through free public proxies (only on gateways that offer them). They're slower and run by unknown people.</li>
+      <li>For whole-browser protection, use the <a href="https://github.com/Fadi-yt1/vpn" rel="noreferrer">Tervyn VPN extension</a>.</li>
+    </ul>
+  </section>
+</main>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var store = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } },
+  };
+  var gateways = [];   // { url, ms, cold, info, error }
+  var chosen = store.get('tervyn.gateway') || '';
+  var QUICK = ['wikipedia.org', 'youtube.com', 'reddit.com', 'x.com', 'news.ycombinator.com', 'bbc.com'];
+
+  QUICK.forEach(function (site) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.textContent = site;
+    b.onclick = function () { $('url').value = site; go(); };
+    $('quick').appendChild(b);
+  });
+
+  function timeout(ms) { return new Promise(function (_, rej) { setTimeout(function () { rej(new Error('timeout')); }, ms); }); }
+  function ping(url) {
+    var t0 = performance.now();
+    return Promise.race([fetch(url + '/__tervyn/ping', { cache: 'no-store', mode: 'cors', referrerPolicy: 'no-referrer' }), timeout(4000)])
+      .then(function (r) { return r.json(); })
+      .then(function (info) {
+        var cold = performance.now() - t0;
+        var t1 = performance.now();
+        // Second ping reuses the connection: that's the speed you'll browse at.
+        return Promise.race([fetch(url + '/__tervyn/ping', { cache: 'no-store', mode: 'cors', referrerPolicy: 'no-referrer' }), timeout(4000)])
+          .then(function () { return { info: info, cold: cold, ms: performance.now() - t1 }; });
+      });
+  }
+
+  function label(g) {
+    var i = g.info || {};
+    var where = [i.region, i.colo, i.country].filter(Boolean).join(' · ');
+    return (i.platform ? i.platform.charAt(0).toUpperCase() + i.platform.slice(1) : 'Gateway') + (where ? ' — ' + where : '');
+  }
+
+  function render() {
+    var box = $('gws');
+    box.textContent = '';
+    if (!gateways.length) { box.innerHTML = '<div class="empty">No gateways configured.</div>'; return; }
+    gateways.slice().sort(function (a, b) { return (a.ms == null) - (b.ms == null) || a.ms - b.ms; }).forEach(function (g) {
+      var row = document.createElement('label');
+      row.className = 'gw';
+      var r = document.createElement('input');
+      r.type = 'radio'; r.name = 'gw'; r.checked = g.url === chosen; r.disabled = g.ms == null;
+      r.onchange = function () { chosen = g.url; store.set('tervyn.gateway', chosen); store.set('tervyn.gateway.pinned', '1'); update(); };
+      var mid = document.createElement('div');
+      var name = document.createElement('div'); name.className = 'name'; name.textContent = label(g);
+      var meta = document.createElement('div'); meta.className = 'meta';
+      meta.textContent = new URL(g.url).host + (g.info && g.info.exits ? ' · free exit countries' : '') + (g.error ? ' · ' + g.error : '');
+      mid.appendChild(name); mid.appendChild(meta);
+      var ms = document.createElement('div');
+      ms.className = 'ms ' + (g.ms == null ? (g.error ? 'bad' : '') : g.ms < 120 ? 'ok' : g.ms < 350 ? 'warn' : 'bad');
+      ms.textContent = g.ms == null ? (g.error ? 'offline' : '…') : Math.round(g.ms) + ' ms';
+      row.appendChild(r); row.appendChild(mid); row.appendChild(ms);
+      box.appendChild(row);
+    });
+  }
+
+  function update() {
+    var g = gateways.find(function (x) { return x.url === chosen; });
+    if (!g) { $('status').textContent = gateways.some(function (x) { return x.ms == null && !x.error; }) ? 'Finding the fastest gateway…' : 'No gateway answered. Try again in a minute.'; }
+    else $('status').textContent = 'Using ' + label(g) + ' (' + Math.round(g.ms) + ' ms)';
+    $('goBtn').disabled = !g;
+    render();
+    loadExits(g);
+  }
+
+  var exitsFor = '';
+  function loadExits(g) {
+    if (!g || !(g.info && g.info.exits)) { $('exitWrap').hidden = true; exitsFor = ''; return; }
+    if (exitsFor === g.url) return;
+    exitsFor = g.url;
+    fetch(g.url + '/__tervyn/exits', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+      var sel = $('exit');
+      var saved = store.get('tervyn.exit') || '';
+      sel.length = 1;
+      (d.countries || []).forEach(function (c) {
+        var o = document.createElement('option');
+        o.value = c.code; o.textContent = c.name + ' (' + c.count + (c.ms ? ', ~' + c.ms + ' ms' : '') + ')';
+        if (c.code === saved) o.selected = true;
+        sel.appendChild(o);
+      });
+      $('exitWrap').hidden = !(d.countries || []).length;
+    }).catch(function () { $('exitWrap').hidden = true; });
+  }
+  $('exit').onchange = function () { store.set('tervyn.exit', this.value); };
+
+  function testAll(list) {
+    gateways = list.map(function (url) { return { url: url, ms: null }; });
+    render();
+    var settled = 0;
+    gateways.forEach(function (g) {
+      ping(g.url).then(function (r) { g.ms = r.ms; g.cold = r.cold; g.info = r.info; }, function (e) { g.error = e.message === 'timeout' ? 'no answer' : 'unreachable'; })
+        .then(function () {
+          settled++;
+          var live = gateways.filter(function (x) { return x.ms != null; });
+          var cur = gateways.find(function (x) { return x.url === chosen && x.ms != null; });
+          // Keep the saved choice if it still works, else take the fastest so far.
+          if (!cur && live.length) { chosen = live.sort(function (a, b) { return a.ms - b.ms; })[0].url; }
+          if (settled === gateways.length && !store.get('tervyn.gateway.pinned') && live.length) {
+            chosen = live.sort(function (a, b) { return a.ms - b.ms; })[0].url;
+          }
+          update();
+        });
+    });
+  }
+
+  function load() {
+    fetch('/__tervyn/gateways', { cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (d) { testAll(d.gateways || [location.origin]); })
+      .catch(function () { testAll([location.origin]); });
+  }
+
+  function go() {
+    var v = $('url').value.trim();
+    if (!v || !chosen) return;
+    var exit = $('exitWrap').hidden ? '' : $('exit').value;
+    location.href = chosen + '/go?url=' + encodeURIComponent(v) + '&exit=' + encodeURIComponent(exit);
+  }
+  $('go').onsubmit = function (e) { e.preventDefault(); go(); };
+  $('retest').onclick = load;
+
+  var q = new URLSearchParams(location.search).get('url');
+  if (q) $('url').value = q;
+  load();
+})();
+</script>
+</body>
+</html>

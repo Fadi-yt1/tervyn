@@ -1,0 +1,22 @@
+name: test
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Unit + gateway tests
+        run: npm test
+      - name: Deno and Cloudflare runtimes
+        run: |
+          npm i --no-save wrangler@4.157.0 deno@2.9.6
+          DENO_BIN=node_modules/.bin/deno WRANGLER_BIN=node_modules/.bin/wrangler node tests/platforms.mjs
+      - name: Browser test (Chromium)
+        run: |
+          npm i --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+          npm run e2e

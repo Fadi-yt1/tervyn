@@ -1,0 +1,23 @@
+# One free VM (e.g. Oracle Cloud Always Free, Google Cloud e2-micro): gateway + Caddy.
+#   DOMAIN=gw1.example.com REGION=Frankfurt docker compose up -d
+services:
+  gateway:
+    build: .
+    restart: unless-stopped
+    environment:
+      TRUST_PROXY: "1"
+      EXITS: "${EXITS:-1}"
+      REGION: "${REGION:-}"
+      GATEWAYS: "${GATEWAYS:-}"
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      DOMAIN: "${DOMAIN:?set DOMAIN to this server's hostname}"
+    volumes:
+      - ./platforms/node/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [gateway]
+volumes:
+  caddy_data:
