@@ -1,0 +1,20 @@
+# Render Blueprint: a free Node gateway with exit countries (free public proxies).
+# Render dashboard → New → Blueprint → pick this repo. Free web services sleep after
+# ~15 minutes without traffic and take a little while to wake; the Tervyn page
+# simply uses a faster gateway meanwhile.
+services:
+  - type: web
+    name: tervyn-gateway
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /__tervyn/health
+    envVars:
+      - key: EXITS
+        value: "1"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: REGION
+        value: Render
+      - key: CACHE_MB
+        value: "64"

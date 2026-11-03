@@ -8,3 +8,5 @@ workers_dev = true
 # Other gateways, comma separated (gateways.json is built in already)
 GATEWAYS = ""
 RATE_LIMIT = "900"
+# Abuse contact shown on /__tervyn/about (the deploy workflow fills it from the CONTACT variable)
+CONTACT = ""

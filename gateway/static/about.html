@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>About Tervyn</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  :root { --bg: #f5f7fb; --text: #182030; --muted: #5d6779; --accent: #4f7cff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0f131a; --text: #e8ecf4; --muted: #96a0b3; --accent: #6b8fff; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 16px; } h2 { font-size: 18px; margin: 28px 0 6px; }
+  p, li { color: var(--muted); } a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <p><a href="/">← Tervyn home</a></p>
+  <h1>Terms, privacy and acceptable use</h1>
+
+  <h2>What Tervyn is</h2>
+  <p>Tervyn Web Proxy is a free, open-source service that fetches web pages for you from a gateway server, so sites see the gateway's address instead of yours. It is provided as is, without warranty, and may be unavailable at any time.</p>
+
+  <h2>Privacy</h2>
+  <ul>
+    <li>No accounts, no ads, no tracking. The gateway code does not log the pages you visit.</li>
+    <li>The gateway has to read pages to make them work through it, so it can technically see what you browse. Don't use it for banking, passwords you care about, or other sensitive sites.</li>
+    <li>Gateways run on hosting platforms (Cloudflare, Deno, Vercel, Netlify, or a server). Those platforms may keep their own standard request logs under their own privacy policies.</li>
+    <li>Your settings (chosen gateway, exit country) are stored only in your browser.</li>
+    <li>"Exit country" connections go through free public proxies run by unknown third parties.</li>
+  </ul>
+
+  <h2>Acceptable use</h2>
+  <p>You may not use Tervyn to:</p>
+  <ul>
+    <li>break the law where you or the gateway are, or infringe copyright;</li>
+    <li>attack, scan, scrape at scale or overload any site or service;</li>
+    <li>send spam, phishing, malware, or evade bans for abuse;</li>
+    <li>access content that exploits children, or harass anyone;</li>
+    <li>stream or download large files continuously (it's built for normal browsing).</li>
+  </ul>
+  <p>Abusive traffic is rate-limited and may be blocked without notice.</p>
+  <!--CONTACT-->
+
+  <h2>Source</h2>
+  <p>Tervyn is open source. The browser extension that protects your whole browser lives at <a href="https://github.com/Fadi-yt1/vpn" rel="noreferrer">github.com/Fadi-yt1/vpn</a>.</p>
+</main>
+</body>
+</html>

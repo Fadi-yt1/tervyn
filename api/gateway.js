@@ -8,6 +8,7 @@ const gateway = createGateway({
   platform: 'vercel',
   gateways: String(process.env.GATEWAYS || '').split(','),
   rateLimit: Number(process.env.RATE_LIMIT || 900),
+  contact: process.env.CONTACT || '',
   info: (req) => {
     // x-vercel-id looks like "fra1::iad1::abc": the edge region comes first.
     const id = req.headers.get('x-vercel-id') || '';

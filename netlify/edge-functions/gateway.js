@@ -7,6 +7,7 @@ const gateway = createGateway({
   platform: 'netlify',
   gateways: env('GATEWAYS').split(','),
   rateLimit: Number(env('RATE_LIMIT') || 900),
+  contact: env('CONTACT'),
   info: (req, ctx) => ({ region: ctx.server?.region || '', country: ctx.geo?.country?.code || '' }),
 });
 

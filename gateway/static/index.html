@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>Tervyn Web Proxy</title>
 <meta name="description" content="Free web proxy. Open any site through the fastest free Tervyn gateway. Nothing to install.">
 <style>
@@ -83,6 +84,7 @@
       <li>"Exit" countries route through free public proxies (only on gateways that offer them). They're slower and run by unknown people.</li>
       <li>For whole-browser protection, use the <a href="https://github.com/Fadi-yt1/vpn" rel="noreferrer">Tervyn VPN extension</a>.</li>
     </ul>
+    <p><a href="/__tervyn/about">Terms, privacy and acceptable use</a></p>
   </section>
 </main>
 <script>
@@ -149,7 +151,8 @@
 
   function update() {
     var g = gateways.find(function (x) { return x.url === chosen; });
-    if (!g) { $('status').textContent = gateways.some(function (x) { return x.ms == null && !x.error; }) ? 'Finding the fastest gateway…' : 'No gateway answered. Try again in a minute.'; }
+    if (!gateways.length) { $('status').textContent = 'No gateways are online yet. Please check back soon.'; }
+    else if (!g) { $('status').textContent = gateways.some(function (x) { return x.ms == null && !x.error; }) ? 'Finding the fastest gateway…' : 'No gateway answered. Try again in a minute.'; }
     else $('status').textContent = 'Using ' + label(g) + ' (' + Math.round(g.ms) + ' ms)';
     $('goBtn').disabled = !g;
     render();
@@ -179,6 +182,7 @@
   function testAll(list) {
     gateways = list.map(function (url) { return { url: url, ms: null }; });
     render();
+    if (!gateways.length) update();
     var settled = 0;
     gateways.forEach(function (g) {
       ping(g.url).then(function (r) { g.ms = r.ms; g.cold = r.cold; g.info = r.info; }, function (e) { g.error = e.message === 'timeout' ? 'no answer' : 'unreachable'; })
@@ -196,10 +200,15 @@
     });
   }
 
+  // On a gateway, ask it for the list. On the static portal (GitHub Pages), read gateways.json.
+  var PORTAL = !!window.TERVYN_PORTAL;
   function load() {
-    fetch('/__tervyn/gateways', { cache: 'no-store' }).then(function (r) { return r.json(); })
-      .then(function (d) { testAll(d.gateways || [location.origin]); })
-      .catch(function () { testAll([location.origin]); });
+    fetch(PORTAL ? 'gateways.json' : '/__tervyn/gateways', { cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (d) {
+        var list = (d.gateways || []).map(function (g) { return String(g).replace(/\/+$/, ''); }).filter(Boolean);
+        testAll(PORTAL ? list : (list.length ? list : [location.origin]));
+      })
+      .catch(function () { testAll(PORTAL ? [] : [location.origin]); });
   }
 
   function go() {

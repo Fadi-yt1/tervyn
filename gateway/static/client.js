@@ -86,6 +86,26 @@
     var realBeacon = navigator.sendBeacon.bind(navigator);
     navigator.sendBeacon = function (url, data) { return realBeacon(toProxy(String(url)), data); };
   }
+  // WebSockets: wss://site/path -> wss://gateway/p/https/site/path
+  var RealWS = window.WebSocket;
+  if (RealWS) {
+    var WS = function (url, protocols) {
+      var target = url;
+      try {
+        var base = current();
+        var u = new URL(String(url), base || location.href);
+        if (u.host === location.host && u.pathname.indexOf(P) !== 0 && base) u = new URL(u.pathname + u.search, base);
+        if (u.pathname.indexOf(P) !== 0 || u.host !== location.host) {
+          var scheme = u.protocol === 'wss:' || u.protocol === 'https:' ? 'https' : 'http';
+          target = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + P + scheme + '/' + u.host + u.pathname + u.search;
+        }
+      } catch (e) { /* use as is */ }
+      return protocols === undefined ? new RealWS(target) : new RealWS(target, protocols);
+    };
+    WS.prototype = RealWS.prototype;
+    ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'].forEach(function (k) { WS[k] = RealWS[k]; });
+    window.WebSocket = WS;
+  }
   var realWinOpen = window.open;
   window.open = function (url) {
     var args = Array.prototype.slice.call(arguments);

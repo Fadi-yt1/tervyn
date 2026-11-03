@@ -5,6 +5,7 @@ import http from 'node:http';
 import zlib from 'node:zlib';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { attachWsEcho, wsRoundTrip } from './helpers/ws-echo.mjs';
 
 const listen = (srv) => new Promise((r) => srv.listen(0, '127.0.0.1', () => r(srv.address().port)));
 const site = http.createServer((req, res) => {
@@ -13,9 +14,15 @@ const site = http.createServer((req, res) => {
   if (u.pathname === '/cookie') { res.writeHead(200, { 'set-cookie': ['a=1; Path=/', 'b=2; Path=/; HttpOnly'] }); return res.end('ok'); }
   if (u.pathname === '/gz') { res.writeHead(200, { 'content-type': 'text/plain', 'content-encoding': 'gzip' }); return res.end(zlib.gzipSync('hello compressed')); }
   if (u.pathname === '/post') { let b = ''; req.on('data', (d) => (b += d)); req.on('end', () => res.end(`${req.method}:${b}`)); return; }
+  if (u.pathname === '/nohead') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end('<p>bare <a href="/x">x</a></p>'); }
+  if (u.pathname === '/latin') { res.writeHead(200, { 'content-type': 'text/html; charset=windows-1252' }); return res.end(Buffer.concat([Buffer.from('<html><head></head><body>caf'), Buffer.from([0xe9]), Buffer.from('</body></html>')])); }
   res.writeHead(200, { 'content-type': 'text/html', 'content-security-policy': "default-src 'none'" });
-  res.end('<html><head><title>T</title></head><body><a href="/next">n</a></body></html>');
+  res.end(`<html><head><title>T</title><meta http-equiv="Content-Security-Policy" content="default-src 'none'">
+<base href="/b/"><link rel="stylesheet" href="s.css" integrity="sha384-x"><style>.a{background:url(/bg.png)}</style></head>
+<body><a href="/next">n</a><img srcset="a.png 1x, //cdn.test/b.png 2x"><div style="background:url('/d.jpg')"></div>
+<script>if (a<b && c>d) x = '<a href="/raw">';</script></body></html>`);
 });
+attachWsEcho(site);
 const sitePort = await listen(site);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -34,9 +41,23 @@ async function check(name, base) {
   const home = await fetch(p('/'));
   assert.equal(home.status, 200);
   assert.equal(home.headers.get('content-security-policy'), null);
+  assert.equal(home.headers.get('x-tervyn-rewriter'), name === 'cloudflare' ? 'stream' : 'buffer');
   const html = await home.text();
   assert.match(html, /<head><script src="\/__tervyn\/client.js"/);
-  assert.match(html, new RegExp(`href="/p/http/127.0.0.1:${sitePort}/next"`));
+  const S = `/p/http/127.0.0.1:${sitePort}`;
+  assert.match(html, new RegExp(`href="${S}/next"`));
+  assert.match(html, new RegExp(`href="${S}/b/s.css"`), 'base href applies');
+  assert.doesNotMatch(html, /integrity|Content-Security-Policy/);
+  assert.match(html, new RegExp(`url\\(${S}/bg.png\\)`), 'style element rewritten');
+  assert.match(html, new RegExp(`srcset="${S}/b/a.png 1x, /p/http/cdn.test/b.png 2x"`));
+  assert.match(html, new RegExp(`url\\('${S}/d.jpg'\\)`), 'style attribute rewritten');
+  assert.match(html, /x = '<a href="\/raw">'/, 'script bodies untouched');
+  const bare = await (await fetch(p('/nohead'))).text();
+  assert.match(bare, /__tervyn\/client\.js/, 'client injected without <head>');
+  assert.match(bare, new RegExp(`href="${S}/x"`));
+  assert.match(await (await fetch(p('/latin'))).text(), /café/, 'non-UTF-8 page decoded');
+  assert.equal(await wsRoundTrip(`${base.replace('http', 'ws')}/p/http/127.0.0.1:${sitePort}/ws`), 'echo:hi', 'WebSocket through gateway');
+  assert.match((await fetch(base + '/__tervyn/about')).headers.get('content-security-policy'), /frame-ancestors 'none'/);
   const red = await fetch(p('/redirect'), { redirect: 'manual' });
   assert.equal(red.status, 302);
   assert.equal(red.headers.get('location'), `/p/http/127.0.0.1:${sitePort}/landing`);

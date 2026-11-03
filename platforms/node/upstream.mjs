@@ -152,6 +152,10 @@ export function createUpstream({ allowPrivate = false, exits = null } = {}) {
         resolve(new Response(Readable.toWeb(body), { status: status < 200 ? 502 : status, statusText: res.statusMessage, headers: h }));
       });
       req.on('timeout', () => req.destroy(new Error('the site took too long to answer')));
+      if (init.signal) {
+        if (init.signal.aborted) req.destroy(init.signal.reason);
+        else init.signal.addEventListener('abort', () => req.destroy(init.signal.reason), { once: true });
+      }
       req.on('error', (e) => { if (proxy && (e.tunnel || e.code === 'ECONNRESET')) e.tunnel = true; reject(e); });
       if (init.body) pipeline(Readable.fromWeb(init.body), req, () => {});
       else req.end();
@@ -180,4 +184,28 @@ export function createUpstream({ allowPrivate = false, exits = null } = {}) {
     }
     return once(url, init, direct[proto], null);
   };
+}
+
+// WebSocket bridge: opens the upgrade to the site (same SSRF-safe DNS check), then pipes raw sockets.
+// `socket` is the browser's socket from the http server's 'upgrade' event.
+export function bridgeWebSocket({ socket, head, target, headers, allowPrivate = false }) {
+  const lookup = safeLookup(allowPrivate);
+  const secure = target.protocol === 'https:';
+  const port = Number(target.port || (secure ? 443 : 80));
+  const fail = (code, msg) => { try { socket.end(`HTTP/1.1 ${code} ${msg}\r\nConnection: close\r\n\r\n`); } catch { socket.destroy(); } };
+  const up = secure
+    ? tls.connect({ host: target.hostname, port, servername: target.hostname, lookup, ALPNProtocols: ['http/1.1'] })
+    : net.connect({ host: target.hostname, port, lookup });
+  const timer = setTimeout(() => { up.destroy(); fail(504, 'Gateway Timeout'); }, 15000);
+  up.once(secure ? 'secureConnect' : 'connect', () => {
+    const lines = [`GET ${target.pathname}${target.search} HTTP/1.1`, `Host: ${target.host}`, 'Connection: Upgrade', 'Upgrade: websocket'];
+    for (const [k, v] of headers) if (!/^(host|connection|upgrade)$/i.test(k)) lines.push(`${k}: ${v}`);
+    up.write(lines.join('\r\n') + '\r\n\r\n');
+    if (head?.length) up.write(head);
+    clearTimeout(timer);
+    up.pipe(socket).pipe(up);
+  });
+  up.on('error', () => { clearTimeout(timer); fail(502, 'Bad Gateway'); });
+  socket.on('error', () => up.destroy());
+  socket.on('close', () => up.destroy());
 }

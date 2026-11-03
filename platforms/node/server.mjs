@@ -13,11 +13,12 @@
 //   TRUST_PROXY=1 read the client IP and scheme from X-Forwarded-* (when behind Caddy)
 //   RATE_LIMIT    requests per minute per IP (default 900)
 //   CACHE_MB      memory for the static asset cache (default 128, 0 = off)
+//   CONTACT       abuse/contact email shown on /__tervyn/about
 import http from 'node:http';
 import zlib from 'node:zlib';
 import { Readable, pipeline } from 'node:stream';
 import { createGateway } from '../../gateway/core.js';
-import { createUpstream } from './upstream.mjs';
+import { createUpstream, bridgeWebSocket } from './upstream.mjs';
 import { createMemoryCache } from './cache.mjs';
 import { createExitPool } from './exits.mjs';
 
@@ -36,6 +37,13 @@ export function createNodeGateway(env = process.env) {
     allowPrivate,
     rateLimit: Number(env.RATE_LIMIT ?? 900),
     info: () => ({ region: env.REGION || '' }),
+    label: env.REGION || '',
+    contact: env.CONTACT || '',
+    // Exit countries don't apply to WebSockets: they go direct from this server.
+    websocket: async (request, target, headers, ctx) => {
+      bridgeWebSocket({ socket: ctx.socket, head: ctx.head, target, headers, allowPrivate });
+      return new Response(null, { status: 200, headers: { 'x-tervyn-ws': '1' } });
+    },
   });
   const trustProxy = env.TRUST_PROXY === '1';
 
@@ -87,6 +95,20 @@ export function createNodeGateway(env = process.env) {
       res.end('Gateway error');
       console.error('gateway error:', e?.message || e);
     }
+  });
+  server.on('upgrade', async (req, socket, head) => {
+    try {
+      const headers = new Headers();
+      for (let i = 0; i < req.rawHeaders.length; i += 2) {
+        try { headers.append(req.rawHeaders[i], req.rawHeaders[i + 1]); } catch { /* skip */ }
+      }
+      const scheme = (trustProxy && String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim()) || 'http';
+      const clientIp = trustProxy ? String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress : req.socket.remoteAddress;
+      const res = await handler(new Request(`${scheme}://${req.headers.host || 'localhost'}${req.url}`, { headers }), { clientIp, socket, head });
+      if (res.headers.get('x-tervyn-ws') !== '1') {
+        socket.end(`HTTP/1.1 ${res.status} ${res.statusText || 'Error'}\r\nConnection: close\r\n\r\n`);
+      }
+    } catch { socket.destroy(); }
   });
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 66000;

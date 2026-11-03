@@ -36,45 +36,37 @@ npm start
 
 Open http://localhost:8080 and type a site. Needs Node 20+ and no `npm install`, because there are no dependencies.
 
-## Deploy to all the free platforms
+## Deploy (all free)
 
-Do the platforms you want; each one is independent. After each deploy, add its URL to `gateways.json`, then run `npm run build` and redeploy, so every gateway lists every other one:
+**The portal** (`index.html` + `gateways.json` at the repo root) is what users open. GitHub Pages serves it free at `https://<owner>.github.io/tervyn/`. It tests every live gateway from the visitor's browser and sends them through the fastest. `npm run build` regenerates it.
 
-```json
-{ "gateways": ["https://tervyn-gateway.you.workers.dev", "https://tervyn.deno.dev", "https://tervyn.vercel.app", "https://tervyn.netlify.app", "https://gw1.example.com"] }
-```
+**The gateways deploy automatically from GitHub.** Create free accounts, add one token per platform as a repository secret (Settings → Secrets and variables → Actions), then run the **deploy** workflow (Actions → deploy → Run workflow) or push. The workflow:
 
-(Or set the `GATEWAYS` environment variable, comma separated, on any platform.)
+1. deploys to every platform that has a token;
+2. finds each live URL and adds it to `gateways.json`;
+3. redeploys, so every gateway lists every other one;
+4. smoke-tests each gateway through `https://example.com`;
+5. commits the live list, so the portal picks it up.
 
-**Cloudflare Workers**
+| Platform | Secret(s) | Where to get it |
+|---|---|---|
+| Cloudflare Workers | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | dash.cloudflare.com → My Profile → API Tokens → "Edit Cloudflare Workers" template. The account ID is on the Workers & Pages overview. Open Workers & Pages once so you get a `workers.dev` subdomain. |
+| Vercel | `VERCEL_TOKEN` | vercel.com → Account Settings → Tokens. The project `tervyn` is created on the first deploy. |
+| Netlify | `NETLIFY_AUTH_TOKEN` | app.netlify.com → User settings → Applications → Personal access tokens. The site `tervyn-<owner>` is created on the first deploy. |
 
-```bash
-npx wrangler login
-```
+Optional repository **variables**:
 
-```bash
-npx wrangler deploy
-```
+| Variable | What it does |
+|---|---|
+| `CONTACT` | Abuse contact email shown on the About page. |
+| `NETLIFY_SITE_NAME` | Netlify site name, if `tervyn-<owner>` is taken. |
+| `EXTRA_GATEWAYS` | URLs of gateways deployed elsewhere, space separated. |
 
-**Deno Deploy**: create a project at https://deno.com/deploy, link this repository, and set the entrypoint to `platforms/deno/main.js`. Or deploy from the command line with `deno deploy` (see Deno's docs for the current command). To run it on any machine with Deno:
+**More free gateways, one click each.** Put their URLs in `EXTRA_GATEWAYS`:
 
-```bash
-deno run --allow-net --allow-env platforms/deno/main.js
-```
-
-**Vercel** (`vercel.json` routes every path to `api/gateway.js`):
-
-```bash
-npx vercel deploy --prod
-```
-
-**Netlify** (`netlify.toml` + `netlify/edge-functions/gateway.js`):
-
-```bash
-npx netlify-cli deploy --prod
-```
-
-**Free VM** (HTTPS, HTTP/2 and HTTP/3 through Caddy, plus exit countries). Point a DNS name at the VM, open ports 80, 443 and 443/udp, then:
+- **Deno Deploy:** on deno.com/deploy, create a project from this GitHub repo with the entrypoint `platforms/deno/main.js`. It redeploys on every push.
+- **Render (Node gateway with exit countries):** in the Render dashboard, choose New → Blueprint → this repo. `render.yaml` sets up a free Docker web service. It sleeps when idle; the portal uses other gateways meanwhile.
+- **Your own free VM** (Oracle Cloud Always Free, Google Cloud e2-micro) gets HTTPS and HTTP/3 through Caddy. Point a DNS name at it, open ports 80, 443 and 443/udp, then:
 
 ```bash
 DOMAIN=gw1.example.com REGION=Frankfurt docker compose up -d
@@ -84,11 +76,13 @@ DOMAIN=gw1.example.com REGION=Frankfurt docker compose up -d
 sudo bash platforms/node/tune-linux.sh
 ```
 
-The second command is optional: it turns on BBR and larger TCP buffers.
+**Manual deploys** also work: `npx wrangler deploy`, `npx vercel deploy --prod`, `npx netlify-cli deploy --prod`, or the Deno command below. Then add the URLs to `gateways.json` and run `npm run build`.
 
-**Deploy everything from GitHub**: `.github/workflows/deploy.yml` deploys to Cloudflare, Vercel and Netlify on every push to `main`, for each platform whose token you add as a repository secret. The workflow file lists the secret names.
+```bash
+deno run --allow-net --allow-env platforms/deno/main.js
+```
 
-> **Check each provider's rules first.** Some free plans restrict proxies or the kind of traffic you may serve. Vercel Hobby is for non-commercial use only. Read the terms of service and acceptable-use policy of every platform before you deploy, and keep the gateway for light browsing.
+> **Check each provider's rules first.** Some free plans restrict proxies or the kind of traffic you may serve. Vercel Hobby is for non-commercial use only. Read each platform's terms of service and acceptable-use policy, and keep Tervyn for light browsing.
 
 ## Node gateway settings
 
@@ -101,6 +95,7 @@ The second command is optional: it turns on BBR and larger TCP buffers.
 | `TRUST_PROXY` | off | `1` behind Caddy/another proxy (reads `X-Forwarded-*`) |
 | `RATE_LIMIT` | 900 | requests per minute per IP |
 | `CACHE_MB` | 128 | memory for the shared static-asset cache, `0` = off |
+| `CONTACT` | | abuse contact email on the About page |
 
 ## What makes it fast
 
@@ -118,17 +113,17 @@ These are the speed measures from the plan. All are in the code today:
 ## How pages keep working
 
 1. **The gateway rewrites pages.** Links, images, scripts, forms, `srcset`, CSS `url()` and redirects all point back to `/p/…`. Headers that would block the page (CSP, X-Frame-Options, HSTS) are removed. Cookies are scoped to `/p/https/site.com/`, so sites can't read each other's cookies.
-2. **A small script runs in each page.** It patches `fetch`, XHR, `history.pushState`, `window.open` and link clicks. It also installs the service worker and shows the Tervyn toolbar (bottom left: change site, Home, open directly, hide).
+2. **A small script runs in each page.** It patches `fetch`, XHR, `WebSocket`, `history.pushState`, `window.open` and link clicks. It also installs the service worker and shows the Tervyn toolbar (bottom left: change site, Home, open directly, hide).
 3. **A service worker catches the rest.** Requests a page script builds at runtime, such as cross-origin `import()`, go through the gateway too. Sites can't install their own service worker, which would take over the gateway.
 4. **There is a server-side safety net.** A root-relative request that still escapes (`/api/x`) is recovered from its Referer and redirected to the right site.
 
 ## Limits and safety
 
-- **This is a web proxy, not a VPN.** Very script-heavy apps (some Google and Microsoft logins, sites that check `location.hostname`), WebSockets and WebRTC may not work. For those, use the [extension](https://github.com/Fadi-yt1/vpn).
+- **This is a web proxy, not a VPN.** Very script-heavy apps (some Google and Microsoft logins, sites that check `location.hostname`) and WebRTC may not work. WebSockets work on Cloudflare, Deno and Node gateways (not Vercel/Netlify). For those, use the [extension](https://github.com/Fadi-yt1/vpn).
 - **The gateway sees what you browse.** It sees the sites you open and their content, because it must rewrite pages. The gateway code doesn't log requests. The hosting platforms may keep their own request logs, though. So avoid banking and other sensitive logins.
 - **Free exit countries are run by unknown people.** HTTPS sites stay encrypted between the gateway and the site, and every exit must pass a certificate check, but they are slower and come and go.
 - **Abuse protection:** per-IP rate limits, a 10 MB upload cap, private networks blocked (localhost, 10/8, 192.168/16, 169.254.169.254 cloud metadata, IPv6 local and more, checked again after DNS on Node), dangerous ports blocked, and `robots.txt` that disallows crawling.
-- **Cloudflare's free plan has a 10 ms CPU limit per request.** Very large HTML pages may hit it. Other files stream through with almost no CPU. See the roadmap in `docs/ARCHITECTURE.md`.
+- **Cloudflare's free plan has a 10 ms CPU limit per request.** The Cloudflare gateway rewrites pages with the native, streaming `HTMLRewriter`, so even large pages stay well within it. Only non-UTF-8 pages use the slower buffered rewriter. Every proxied page has an `x-tervyn-rewriter: stream|buffer` header that shows which one ran.
 
 ## Testing and benchmarks
 
@@ -175,6 +170,7 @@ Throughput under load (oha / wrk / autocannon).
 ```
 gateway/core.js          the gateway: routing, headers, cookies, cache, rate limit (all platforms)
 gateway/rewrite.js       HTML / CSS / header rewriting
+gateway/htmlrewriter.js  streaming HTML rewriting with Cloudflare's HTMLRewriter
 gateway/url.js           /p/ URL scheme and private-network guard
 gateway/static/          home page, in-page script + toolbar, service worker (bundled by npm run build)
 platforms/cloudflare/    Workers adapter        (wrangler.toml)
@@ -184,6 +180,9 @@ netlify/edge-functions/  Netlify Edge adapter   (netlify.toml)
 platforms/node/          Node server, keep-alive upstream, cache, free exit pool, Caddyfile, Linux tuning
 bench/                   benchmark scripts
 docs/ARCHITECTURE.md     design, trade-offs, roadmap
+scripts/deploy.sh        deploy + link + smoke-test all gateways (run by the deploy workflow)
+index.html, gateways.json  the portal (GitHub Pages), generated by npm run build
+render.yaml              one-click free Render gateway
 ```
 
 After editing anything in `gateway/static/` or `gateways.json`, run `npm run build`. It regenerates `gateway/assets.js`, and `npm test` checks that it's up to date.

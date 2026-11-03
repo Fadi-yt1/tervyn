@@ -2,8 +2,10 @@
 // requests that page scripts build at runtime.   npm run e2e
 import http from 'node:http';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createNodeGateway } from '../platforms/node/server.mjs';
+import { attachWsEcho } from './helpers/ws-echo.mjs';
 
 let chromium;
 try { ({ chromium } = createRequire(import.meta.url)('playwright')); } catch {
@@ -32,6 +34,7 @@ const site = http.createServer((req, res) => {
   window.tryImport = () => import('${'${ORIGIN}'}/mod.js').then(() => window.modLoaded === true);
 </script></body></html>`.replace('${ORIGIN}', siteOrigin));
 });
+attachWsEcho(site);
 siteOrigin = `http://127.0.0.1:${await listen(site)}`;
 const { server: gw } = createNodeGateway({ ALLOW_PRIVATE: '1', RATE_LIMIT: '0', CACHE_MB: '0' });
 const gwOrigin = `http://127.0.0.1:${await listen(gw)}`;
@@ -59,6 +62,15 @@ try {
   const path = await page.evaluate(() => { history.pushState({}, '', '/deeper/page?q=1'); return location.pathname + location.search; });
   assert.equal(path, `/p/http/${siteOrigin.slice(7)}/deeper/page?q=1`);
 
+  // Page code that builds a WebSocket URL from location.host still reaches the site.
+  const wsReply = await page.evaluate(() => new Promise((resolve) => {
+    const ws = new WebSocket('ws://' + location.host + '/ws');
+    ws.onopen = () => ws.send('page');
+    ws.onmessage = (e) => resolve(e.data);
+    ws.onerror = () => resolve('error');
+  }));
+  assert.equal(wsReply, 'echo:page', 'WebSocket from page code goes through the gateway');
+
   // Sites can't replace our service worker.
   const blocked = await page.evaluate(() => navigator.serviceWorker.register('/evil-sw.js').then(() => false, () => true));
   assert.equal(blocked, true, 'site service worker registration is refused');
@@ -69,7 +81,28 @@ try {
   await page.goto(gwOrigin + '/');
   if (process.env.DEBUG) console.log(page.url(), (await page.content()).slice(0, 300));
   await page.waitForFunction(() => /Using /.test(document.getElementById('status').textContent));
-  console.log('e2e: all checks passed —', await page.textContent('#status'));
+  const gwStatus = await page.textContent('#status');
+
+  // Static portal (what GitHub Pages serves): finds the gateway and sends the user through it.
+  const root = new URL('..', import.meta.url);
+  const portal = http.createServer((req, res) => {
+    const name = req.url.split('?')[0].replace(/^\//, '') || 'index.html';
+    if (name === 'gateways.json') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ gateways: ['http://127.0.0.1:1', gwOrigin] })); }
+    try { res.writeHead(200, { 'content-type': name.endsWith('.html') ? 'text/html' : 'image/svg+xml' }); res.end(readFileSync(new URL(name, root))); } catch { res.writeHead(404); res.end(); }
+  });
+  const portalOrigin = `http://127.0.0.1:${await listen(portal)}`;
+  try {
+    const p2 = await browser.newPage();
+    await p2.goto(portalOrigin + '/');
+    await p2.waitForFunction(() => /Using /.test(document.getElementById('status').textContent), null, { timeout: 15000 });
+    assert.equal(await p2.getAttribute('a[href="about.html"]', 'href'), 'about.html');
+    await p2.fill('#url', siteOrigin + '/');
+    await p2.click('#goBtn');
+    await p2.waitForURL(new RegExp(`^${gwOrigin}/p/http/`));
+    assert.equal(await p2.textContent('h1'), 'Hello', 'portal sends the user through the gateway');
+  } finally { portal.close(); }
+
+  console.log('e2e: all checks passed —', gwStatus);
 } finally {
   await browser.close();
   site.close(); gw.close(); gw.closeAllConnections();

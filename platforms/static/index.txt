@@ -1,0 +1,1 @@
+<!-- static output folder for Vercel/Netlify; the gateway serves everything itself -->

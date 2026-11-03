@@ -7,6 +7,7 @@ import net from 'node:net';
 import zlib from 'node:zlib';
 import { createNodeGateway } from '../platforms/node/server.mjs';
 import { createUpstream } from '../platforms/node/upstream.mjs';
+import { attachWsEcho, wsRoundTrip } from './helpers/ws-echo.mjs';
 
 let site, siteUrl, gw, gwUrl, exits, connectProxy, socksProxy;
 const seen = { exitHits: 0 };
@@ -50,6 +51,7 @@ before(async () => {
         return res.end('nope');
     }
   });
+  attachWsEcho(site);
   siteUrl = `http://127.0.0.1:${await listen(site)}`;
 
   // Fake free proxies: CONNECT and SOCKS5, both forwarding to the test site.
@@ -195,4 +197,17 @@ test('private targets are refused unless allowed', async () => {
   // A public-looking name that resolves to a private IP is caught at DNS time.
   const up = createUpstream({ allowPrivate: false });
   await assert.rejects(up(`http://localhost:${new URL(siteUrl).port}/`, { method: 'GET', headers: new Headers() }), /private network/);
+});
+
+test('WebSockets are bridged to the site', async () => {
+  assert.equal(await wsRoundTrip(`${gwUrl.replace('http', 'ws')}/p/http/${siteUrl.slice(7)}/ws`, 'yo'), 'echo:yo');
+});
+
+test('own pages carry security headers; about page and favicon exist', async () => {
+  const home = await fetch(gwUrl + '/');
+  assert.match(home.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  assert.equal(home.headers.get('x-frame-options'), 'DENY');
+  assert.equal((await fetch(gwUrl + '/__tervyn/about')).status, 200);
+  assert.equal((await fetch(gwUrl + '/favicon.ico')).headers.get('content-type'), 'image/svg+xml');
+  assert.equal((await (await fetch(gwUrl + '/__tervyn/health')).json()).ok, true);
 });

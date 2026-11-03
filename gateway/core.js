@@ -35,8 +35,19 @@ function json(data, status = 200, extra = {}) {
   });
 }
 
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+// Headers for the gateway's own pages (not proxied sites).
+const PAGE_HEADERS = {
+  'content-type': 'text/html; charset=utf-8',
+  'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src *; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'no-referrer',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
+};
+
 function errorPage(status, title, detail, target) {
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const esc = escapeHtml;
   const retry = target ? `<p><a href="${esc(encodeTarget(target))}">Try again</a> · <a href="${esc(target.href)}" rel="noreferrer">Open directly (no proxy)</a></p>` : '';
   return new Response(
     `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>` +
@@ -116,14 +127,41 @@ export function createGateway(options = {}) {
   const maxBody = options.maxBody ?? 10 * 1024 * 1024;
   const gateways = [...GATEWAYS, ...(options.gateways || [])].map((g) => String(g).trim().replace(/\/+$/, '')).filter(Boolean);
 
+  const timeoutMs = options.timeoutMs ?? 30000;
+
   return async function handle(request, ctx = {}) {
+    let res;
+    try {
+      res = await route(request, ctx);
+    } catch (e) {
+      res = errorPage(500, 'Something went wrong', 'The gateway hit an unexpected error. Please try again.', null);
+      try { console.error('tervyn: unexpected error', e?.stack || e); } catch { /* no console */ }
+    }
+    if (res.status === 101 || res.webSocket) return res; // WebSocket handshakes pass untouched
+    const h = new Headers(res.headers);
+    if (new URL(request.url).protocol === 'https:') h.set('strict-transport-security', 'max-age=31536000');
+    if (!h.has('x-content-type-options')) h.set('x-content-type-options', 'nosniff');
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+  };
+
+  async function route(request, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
     const clientIp = ctx.clientIp || '';
 
     // ----- gateway pages and APIs -----
     if (path === '/' || path === '/index.html' || path === '/__tervyn/home') {
-      return new Response(ASSETS['index.html'], { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' } });
+      return new Response(ASSETS['index.html'], { headers: { ...PAGE_HEADERS, 'cache-control': 'no-cache' } });
+    }
+    if (path === '/__tervyn/about') {
+      const contact = options.contact ? `<p>Report abuse or a problem: <a href="mailto:${escapeHtml(options.contact)}">${escapeHtml(options.contact)}</a></p>` : '';
+      return new Response(ASSETS['about.html'].replace('<!--CONTACT-->', contact), { headers: { ...PAGE_HEADERS, 'cache-control': 'public, max-age=3600' } });
+    }
+    if (path === '/favicon.ico' || path === '/favicon.svg') {
+      return new Response(ASSETS['favicon.svg'], { headers: { 'content-type': 'image/svg+xml', 'cache-control': 'public, max-age=86400' } });
+    }
+    if (path === '/__tervyn/health') {
+      return json({ ok: true });
     }
     if (path === '/sw.js') {
       return new Response(ASSETS['sw.js'], { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' } });
@@ -205,6 +243,15 @@ export function createGateway(options = {}) {
     }
 
     const exit = getCookie(request.headers.get('cookie'), 'tervyn_exit');
+
+    if ((request.headers.get('upgrade') || '').toLowerCase() === 'websocket') {
+      if (!options.websocket) return new Response('WebSockets are not supported on this gateway. Pick another gateway on the Tervyn home page.', { status: 501 });
+      for (const k of ['sec-websocket-key', 'sec-websocket-version', 'sec-websocket-protocol', 'sec-websocket-extensions']) {
+        const v = request.headers.get(k);
+        if (v) headers.set(k, v);
+      }
+      return options.websocket(request, target, headers, ctx);
+    }
     const hasBody = !['GET', 'HEAD'].includes(request.method);
 
     // Static asset cache (shared by all users of this gateway node).
@@ -223,17 +270,22 @@ export function createGateway(options = {}) {
 
     const started = Date.now();
     let upstream;
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(new Error('the site took too long to answer')), timeoutMs);
     try {
       upstream = await upstreamFetch(target.href, {
         method: request.method,
         headers,
         body: hasBody ? request.body : undefined,
         redirect: 'manual',
+        signal: abort.signal,
         ...(hasBody ? { duplex: 'half' } : {}),
       }, { exit, clientIp });
     } catch (e) {
-      const msg = String(e?.message || e);
+      const msg = abort.signal.aborted ? 'The site took too long to answer.' : String(e?.message || e);
       return errorPage(502, "Couldn't reach this site", `The gateway could not connect to ${target.host}. ${msg.slice(0, 200)}`, target);
+    } finally {
+      clearTimeout(timer);
     }
     const upstreamMs = Date.now() - started;
 
@@ -265,10 +317,18 @@ export function createGateway(options = {}) {
     const isCss = /text\/css/i.test(type);
 
     if (isHtml) {
-      const html = await readText(upstream, type);
-      const inject = `<script src="/__tervyn/client.js" data-tervyn="${encodeURIComponent(JSON.stringify({ u: target.href, p: options.platform || '', x: exit || '' }))}"></script>`;
-      out.set('content-type', 'text/html; charset=utf-8');
+      const inject = `<script src="/__tervyn/client.js" data-tervyn="${encodeURIComponent(JSON.stringify({ u: target.href, p: options.label || options.platform || '', x: exit || '' }))}"></script>`;
       out.set('cache-control', 'no-cache, private');
+      if (options.streamHtml && options.streamHtml.canStream(type)) {
+        // Cloudflare: native streaming rewriter (low CPU, no buffering).
+        out.set('content-type', type || 'text/html; charset=utf-8');
+        out.set('x-tervyn-rewriter', 'stream');
+        const streamed = options.streamHtml.transform(new Response(upstream.body, { status, headers: { 'content-type': type || 'text/html' } }), target.href, inject);
+        return new Response(streamed.body, { status, headers: out });
+      }
+      const html = await readText(upstream, type);
+      out.set('content-type', 'text/html; charset=utf-8');
+      out.set('x-tervyn-rewriter', 'buffer');
       return new Response(rewriteHtml(html, target.href, { inject }), { status, headers: out });
     }
     if (isCss) {
@@ -295,7 +355,7 @@ export function createGateway(options = {}) {
       }
     }
     return res;
-  };
+  }
 }
 
 export { PREFIX };

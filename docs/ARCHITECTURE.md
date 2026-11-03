@@ -55,8 +55,8 @@ sequenceDiagram
 | Streaming / large files | Bodies stream; `Range` passes through; no buffering except HTML/CSS that must be rewritten | Done |
 | Redirect hops | `/go` → one 302; `/p/` URLs keep relative links valid; Location rewritten | Done |
 | Escaped requests (JS-built URLs) | client.js patches + service worker + Referer fallback on the server | Done |
-| Cloudflare free 10 ms CPU limit on big HTML | Use Workers `HTMLRewriter` (streaming, native) for the Cloudflare adapter | **Next** |
-| WebSockets | Pass `Upgrade` through on Cloudflare/Deno (both support it) | **Next** |
+| Cloudflare free 10 ms CPU limit on big HTML | Native streaming `HTMLRewriter` on Cloudflare (`gateway/htmlrewriter.js`); buffered fallback only for non-UTF-8 pages | Done |
+| WebSockets | Cloudflare passes the site's socket through; Deno and Node bridge it; client.js maps `ws(s)://` URLs | Done (not on Vercel/Netlify) |
 | Early hints | Send `103 Early Hints` / `Link: preload` for CSS found in `<head>` | Later |
 
 ## Security
@@ -84,7 +84,7 @@ Run benchmarks from several networks (home broadband, a 4G hotspot, cloud VMs in
 1. **Gateway race accuracy:** does the gateway with the lowest warm ping also give the lowest page-load time? If not, use a small real fetch through each gateway (e.g. a cached 10 KB asset) as the probe.
 2. **HTTP/3 vs HTTP/2** to the gateway on lossy mobile links (`bench/load.sh` with oha).
 3. **Cache hit rate** after a day of real use; tune which content types are cached.
-4. **Cloudflare HTMLRewriter vs regex rewriter:** CPU time per large page (the 10 ms free-plan limit).
+4. **Cloudflare CPU time per large page** with the streaming HTMLRewriter (watch the Workers analytics for CPU-limit errors).
 5. **Exit-country latency:** how many tested free proxies per country stay alive between re-checks (every 4 min) and the extra latency they add.
 6. **Brotli level 4 vs 5 vs gzip** on the Node gateway: CPU per MB vs bytes saved.
 
@@ -97,6 +97,7 @@ Run benchmarks from several networks (home broadband, a 4G hotspot, cloud VMs in
 | Home page with the all-gateway race; in-page toolbar; service worker | Done (browser-tested) |
 | Free exit countries (18 public lists, TLS-verified) on Node | Done |
 | Benchmarks, CI, deploy workflow | Done |
-| Cloudflare HTMLRewriter path, WebSockets | Next |
+| Cloudflare HTMLRewriter path, WebSockets | Done |
+| Automated deploy to all free platforms + linking + smoke test; GitHub Pages portal | Done |
 | Link the extension popup to the web proxy ("No install? Use the web version") | Next (in the extension repo) |
 | Public gateway list that gateways share with each other automatically | Later |
