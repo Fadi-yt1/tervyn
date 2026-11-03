@@ -33,3 +33,20 @@ jobs:
         run: |
           node scripts/check-exits.mjs "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/proxies/proxies.json" US CA DE || true
           for cc in US CA DE; do for t in http https; do echo "== cloudflare check $cc $t"; curl -s -m 90 "https://tervyn-gateway.tervyn-fadi-yt1.workers.dev/__tervyn/exits/check?cc=$cc&target=$t"; echo; done; done
+      - name: Node gateway (the code Vercel's country function runs) through real free proxies
+        run: |
+          PROXY_LIST_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/proxies/proxies.json" PORT=8080 node platforms/node/server.mjs &
+          sleep 3
+          for cc in US CA DE; do
+            for site in https://api.ipify.org/?format=json https://www.wikipedia.org/; do
+              curl -s -m 60 -D h.txt -o b.txt -H "cookie: tervyn_exit=$cc" "http://localhost:8080/p/${site/:\/\//\/}"
+              echo "node $cc $site -> $(head -1 h.txt | tr -d '\r') $(grep -i '^x-tervyn-exit' h.txt | tr -d '\r') $(head -c 100 b.txt | tr '\n' ' ')"
+            done
+          done
+      - name: Vercel country function
+        run: |
+          curl -s -m 30 https://tervyn.vercel.app/__tervyn/exits | head -c 300; echo
+          for cc in US CA DE; do
+            curl -s -m 60 -D h.txt -o b.txt -H "cookie: tervyn_exit=$cc" "https://tervyn.vercel.app/p/https/api.ipify.org/?format=json"
+            echo "vercel $cc -> $(head -1 h.txt | tr -d '\r') $(grep -i '^x-tervyn-exit' h.txt | tr -d '\r') $(sed -e 's/<[^>]*>/ /g' b.txt | tr -s ' \n' ' ' | head -c 200)"
+          done

@@ -30,7 +30,10 @@ function edgeCache() {
 
 export default {
   async fetch(request, env, ctx) {
-    const exits = env.PROXY_LIST_URL ? (globalThis.__tervynExits ||= createRemoteExits({
+    // Off by default: Workers can tunnel plain HTTP through free proxies, but upgrading the
+    // tunnel to TLS (startTls after a proxy handshake) fails on Cloudflare, so HTTPS sites
+    // break. Countries are served by Vercel's Node function instead. EXITS=1 turns it on.
+    const exits = env.PROXY_LIST_URL && env.EXITS === '1' ? (globalThis.__tervynExits ||= createRemoteExits({
       url: env.PROXY_LIST_URL,
       fetchList: (u) => fetch(u, { cf: { cacheTtl: 300, cacheEverything: true } }),
     })) : null;
@@ -59,7 +62,8 @@ export default {
       info: (req) => ({ colo: req.cf?.colo || '', country: req.cf?.country || '' }),
     });
     const path = new URL(request.url).pathname;
-    if (path === '/__tervyn/exits/check' && exits) {
+    if (path === '/__tervyn/exits/check' && env.PROXY_LIST_URL) {
+      const exits = globalThis.__tervynCheck ||= createRemoteExits({ url: env.PROXY_LIST_URL });
       const cc = (new URL(request.url).searchParams.get('cc') || 'US').toUpperCase().slice(0, 2);
       const t = new URL(request.url).searchParams.get('target') === 'http' ? 'http://api.ipify.org/?format=json' : 'https://api.ipify.org/?format=json';
       return Response.json({ country: cc, target: t, results: await checkExits(openSocket, exits, cc, t) }, { headers: { 'cache-control': 'no-store' } });

@@ -69,7 +69,7 @@ deploy_vercel() {
   local stage; stage=$(mktemp -d)/tervyn
   mkdir -p "$stage/platforms"
   cp -r api gateway scripts vercel.json package.json gateways.json "$stage/"
-  cp -r platforms/static "$stage/platforms/"
+  cp -r platforms/static platforms/node "$stage/platforms/"
   out=$(cd "$stage" && $VERCEL deploy --prod --yes --token "$VERCEL_TOKEN" 2>&1); echo "$out" | tail -25
   dep=$(echo "$out" | grep -oE 'https://[^ ]+\.vercel\.app' | tail -1)
   echo "deployment: $dep"

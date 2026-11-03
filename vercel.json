@@ -2,5 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "node scripts/build-assets.mjs",
   "outputDirectory": "platforms/static",
-  "rewrites": [{ "source": "/(.*)", "destination": "/api/gateway?tervyn_path=/$1" }]
+  "functions": { "api/exit.js": { "maxDuration": 60, "memory": 1024 } },
+  "rewrites": [
+    { "source": "/__tervyn/exits", "destination": "/api/exit?tervyn_path=/__tervyn/exits" },
+    { "source": "/(.*)", "has": [{ "type": "cookie", "key": "tervyn_exit", "value": "[A-Z]{2}" }], "destination": "/api/exit?tervyn_path=/$1" },
+    { "source": "/(.*)", "destination": "/api/gateway?tervyn_path=/$1" }
+  ]
 }

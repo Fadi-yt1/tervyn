@@ -90,7 +90,7 @@ if (process.env.DENO_BIN) {
     { env: { ...process.env, PORT: '8791', ALLOW_PRIVATE: '1', PROXY_LIST_URL: `http://127.0.0.1:${sitePort}/proxies.json` }, stdio: 'ignore' })]);
 }
 if (process.env.WRANGLER_BIN) {
-  runs.push(['cloudflare', 8792, () => spawn(process.env.WRANGLER_BIN, ['dev', '--port', '8792', '--ip', '127.0.0.1', '--var', 'ALLOW_PRIVATE:1', '--var', `PROXY_LIST_URL:http://127.0.0.1:${sitePort}/proxies.json`, '--show-interactive-dev-session=false'],
+  runs.push(['cloudflare', 8792, () => spawn(process.env.WRANGLER_BIN, ['dev', '--port', '8792', '--ip', '127.0.0.1', '--var', 'ALLOW_PRIVATE:1', '--var', 'EXITS:1', '--var', `PROXY_LIST_URL:http://127.0.0.1:${sitePort}/proxies.json`, '--show-interactive-dev-session=false'],
     { env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, stdio: process.env.DEBUG ? 'inherit' : 'ignore' })]);
 }
 if (!runs.length) console.log('platforms: no runtimes given (set DENO_BIN and/or WRANGLER_BIN), skipped');

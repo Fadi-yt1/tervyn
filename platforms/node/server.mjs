@@ -51,7 +51,8 @@ export function createNodeGateway(env = process.env) {
   });
   const trustProxy = env.TRUST_PROXY === '1';
 
-  const server = http.createServer(async (req, res) => {
+  // Plain (req, res) listener, also used by the Vercel Node function (api/exit.js).
+  const listener = async (req, res) => {
     try {
       const fwdProto = trustProxy && String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
       const scheme = fwdProto || (req.socket.encrypted ? 'https' : 'http');
@@ -99,7 +100,8 @@ export function createNodeGateway(env = process.env) {
       res.end('Gateway error');
       console.error('gateway error:', e?.message || e);
     }
-  });
+  };
+  const server = http.createServer(listener);
   server.on('upgrade', async (req, socket, head) => {
     try {
       const headers = new Headers();
@@ -117,7 +119,7 @@ export function createNodeGateway(env = process.env) {
   server.keepAliveTimeout = 65000;
   server.headersTimeout = 66000;
   server.requestTimeout = 0; // long downloads and streams are fine
-  return { server, exits };
+  return { server, exits, listener };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

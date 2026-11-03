@@ -171,7 +171,7 @@ export function createGateway(options = {}) {
     }
     if (path === '/__tervyn/ping') {
       const extra = options.info ? await options.info(request, ctx) : {};
-      return json({ ok: true, name: 'tervyn-gateway', version: VERSION, platform: options.platform || 'unknown', exits: !!options.exits, t: Date.now(), ...extra });
+      return json({ ok: true, name: 'tervyn-gateway', version: VERSION, platform: options.platform || 'unknown', exits: !!(options.exits || options.exitsElsewhere), t: Date.now(), ...extra });
     }
     if (path === '/__tervyn/gateways') {
       return json({ self: url.origin, gateways: [...new Set([url.origin, ...gateways])] });
