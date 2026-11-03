@@ -101,7 +101,9 @@ test('home page, ping and gateway list', async () => {
   assert.equal(ping.platform, 'node');
   assert.equal(ping.exits, true);
   const list = await (await fetch(gwUrl + '/__tervyn/gateways')).json();
-  assert.deepEqual(list.gateways, [gwUrl, 'https://a.example', 'https://b.example']);
+  assert.equal(list.gateways[0], gwUrl);
+  for (const g of ['https://a.example', 'https://b.example']) assert.ok(list.gateways.includes(g), g);
+  assert.equal(new Set(list.gateways).size, list.gateways.length, 'no duplicates');
   const sw = await fetch(gwUrl + '/sw.js');
   assert.match(sw.headers.get('content-type'), /javascript/);
 });

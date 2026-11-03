@@ -107,6 +107,12 @@ deploy_netlify() {
     done
   fi
   if [ -z "$id" ]; then echo "::warning::Could not find or create Netlify site $NETLIFY_SITE_NAME (name taken? set NETLIFY_SITE_NAME)"; end; return 0; fi
+  # New Netlify sites can come with "team login" visitor protection; a public proxy needs it off.
+  local prot
+  prot=$(curl -sS -X PATCH -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" -H 'content-type: application/json' \
+    -d '{"sso_login":false,"sso_login_context":"none","password":null,"password_context":"none"}' "$api/sites/$id" \
+    | jq -c '{sso_login, sso_login_context, has_password: (.has_password // null)}' 2>/dev/null)
+  echo "visitor protection after update: $prot"
   local out
   out=$($NETLIFY deploy --prod --site "$id" --auth "$NETLIFY_AUTH_TOKEN" --json 2>&1)
   url=$(echo "$out" | sed -n '/^{/,$p' | jq -r '.url // empty' 2>/dev/null)
@@ -145,6 +151,7 @@ echo "## Tervyn gateways" >> "$SUMMARY"
 echo "| Gateway | Ping | Proxy test |" >> "$SUMMARY"
 echo "|---|---|---|" >> "$SUMMARY"
 OK=0
+PASSED=()
 for gw in $(node -e 'console.log(require("./gateways.json").gateways.join(" "))'); do
   for try in 1 2 3 4 5 6 7 8; do
     ping=$(curl -fsS -m 20 "$gw/__tervyn/ping" | jq -r '.platform // "?"' 2>/dev/null || echo "down")
@@ -153,7 +160,20 @@ for gw in $(node -e 'console.log(require("./gateways.json").gateways.join(" "))'
     echo "$gw: attempt $try got HTTP $code, retrying in 20s"; sleep 20
   done
   echo "| $gw | ${ping:-down} | HTTP $code |" >> "$SUMMARY"
-  [ "$code" = "200" ] && OK=$((OK + 1))
+  [ "$code" = "200" ] && { OK=$((OK + 1)); PASSED+=("$gw"); }
 done
 echo "$OK gateway(s) passed the proxy test" | tee -a "$SUMMARY"
+
+# Publish only gateways that work right now (plus EXTRA_GATEWAYS, which you manage yourself).
+if [ "$OK" -gt 0 ]; then
+  node -e '
+    const fs = require("fs");
+    const data = JSON.parse(fs.readFileSync("gateways.json", "utf8"));
+    const keep = new Set(process.argv.slice(1).map((u) => u.replace(/\/+$/, "")));
+    data.gateways = data.gateways.filter((g) => keep.has(g));
+    fs.writeFileSync("gateways.json", JSON.stringify(data, null, 2) + "\n");
+    console.log("published:", data.gateways.join(" "));
+  ' "${PASSED[@]}" $EXTRA
+  node scripts/build-assets.mjs
+fi
 [ "$OK" -gt 0 ] || { echo "::error::No gateway passed the smoke test"; exit 1; }
