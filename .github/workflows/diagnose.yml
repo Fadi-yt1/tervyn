@@ -1,0 +1,16 @@
+# Prints what each live gateway answers (status, headers, start of body). Run by hand.
+name: diagnose
+on: workflow_dispatch
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Probe gateways
+        run: |
+          for gw in $(node -e 'console.log(require("./gateways.json").gateways.join(" "))'); do
+            for path in /__tervyn/ping / /p/https/example.com/ /api/gateway?tervyn_path=/__tervyn/ping; do
+              echo "================ $gw$path"
+              curl -s -m 30 -i "$gw$path" | head -c 1500; echo
+            done
+          done
