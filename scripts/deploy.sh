@@ -164,6 +164,14 @@ for gw in $(node -e 'console.log(require("./gateways.json").gateways.join(" "))'
 done
 echo "$OK gateway(s) passed the proxy test" | tee -a "$SUMMARY"
 
+# Countries (free proxies): informational, since free servers come and go.
+for gw in "${PASSED[@]}"; do
+  cc=$(curl -fsS -m 20 "$gw/__tervyn/exits" | jq -r '[.countries[] | select(.code == "US" or .code == "CA")][0].code // .countries[0].code // empty' 2>/dev/null)
+  [ -n "$cc" ] || continue
+  code=$(curl -s -m 40 -o /dev/null -w '%{http_code}' -H "cookie: tervyn_exit=$cc" "$gw/p/https/example.com/")
+  echo "Country check: $gw via $cc free server -> HTTP $code" | tee -a "$SUMMARY"
+done
+
 # Publish only gateways that work right now (plus EXTRA_GATEWAYS, which you manage yourself).
 if [ "$OK" -gt 0 ]; then
   node -e '

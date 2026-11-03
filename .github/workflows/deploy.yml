@@ -47,6 +47,7 @@ jobs:
         if: steps.tokens.outputs.skip != '1'
         run: |
           if [ -n "$CONTACT" ]; then sed -i "s/^CONTACT = .*/CONTACT = \"$CONTACT\"/" wrangler.toml; fi
+          sed -i "s#^PROXY_LIST_URL = .*#PROXY_LIST_URL = \"https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/proxies/proxies.json\"#" wrangler.toml
           bash scripts/deploy.sh
       - name: Publish the gateway list to the portal
         if: steps.tokens.outputs.skip != '1'

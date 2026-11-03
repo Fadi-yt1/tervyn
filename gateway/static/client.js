@@ -164,7 +164,8 @@
     var t = current();
     var host = document.createElement('tervyn-bar');
     var root = host.attachShadow({ mode: 'closed' });
-    var region = cfg.x ? 'exit ' + cfg.x : (cfg.p || 'gateway');
+    var flag = function (c) { return /^[A-Z]{2}$/.test(c) ? String.fromCodePoint.apply(null, c.split('').map(function (x) { return 0x1f1e6 + x.charCodeAt(0) - 65; })) : ''; };
+    var region = cfg.x ? flag(cfg.x) + ' ' + cfg.x : (cfg.p || 'gateway');
     root.innerHTML =
       '<style>' +
       ':host{all:initial;position:fixed;left:12px;bottom:12px;z-index:2147483647;font:13px/1.3 system-ui,-apple-system,Segoe UI,sans-serif}' +
@@ -172,6 +173,7 @@
       '.dot{width:8px;height:8px;border-radius:50%;background:#34d399;flex:none}' +
       '.lbl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40vw;cursor:pointer}' +
       'form{display:none;gap:6px}.open form{display:flex}.open .lbl{display:none}' +
+      'select{all:unset;cursor:pointer;background:#2b3548;color:#eef2ff;border-radius:999px;padding:5px 9px;max-width:9.5em}' +
       'input{all:unset;background:#232b3b;color:#fff;border-radius:999px;padding:5px 10px;width:min(52vw,420px)}' +
       'button,a{all:unset;cursor:pointer;background:#2b3548;color:#eef2ff;border-radius:999px;padding:5px 9px;white-space:nowrap}' +
       'button:hover,a:hover{background:#3a4660}.go{background:#4f7cff}.go:hover{background:#3d68ea}' +
@@ -180,15 +182,33 @@
       '<div class="pill"><span class="dot"></span>' +
       '<span class="lbl" title="Tervyn web proxy"></span>' +
       '<form><input name="u" autocomplete="off" spellcheck="false" aria-label="Address"><button class="go" type="submit">Go</button>' +
+      '<select class="cc" aria-label="Country" hidden><option value="">🌐 No country</option></select>' +
       '<a class="home" href="/__tervyn/home" title="Tervyn home">Home</a><a class="direct" rel="noreferrer" title="Leave the proxy and open this page directly">Direct</a></form>' +
       '<button class="x" type="button" title="Hide toolbar" aria-label="Hide toolbar">✕</button></div>';
     var pill = root.querySelector('.pill');
     var lbl = root.querySelector('.lbl');
     var input = root.querySelector('input');
     lbl.textContent = 'Tervyn · ' + (t ? t.hostname : '') + ' · ' + region;
-    lbl.onclick = function () { pill.classList.add('open'); var c = current(); input.value = c ? c.href : ''; input.focus(); input.select(); };
+    var cc = root.querySelector('.cc');
+    var ccLoaded = false;
+    function loadCountries() {
+      if (ccLoaded) return;
+      ccLoaded = true;
+      fetch('/__tervyn/exits').then(function (r) { return r.json(); }).then(function (d) {
+        (d.countries || []).forEach(function (c) {
+          var o = document.createElement('option');
+          o.value = c.code; o.textContent = flag(c.code) + ' ' + c.name;
+          if (c.code === cfg.x) o.selected = true;
+          cc.appendChild(o);
+        });
+        cc.hidden = !(d.countries || []).length;
+      }).catch(function () { /* this gateway has no countries */ });
+    }
+    // Switching country reloads this page through a free server in that country.
+    cc.onchange = function () { var c = current(); if (c) location.href = '/go?url=' + encodeURIComponent(c.href) + '&exit=' + encodeURIComponent(cc.value); };
+    lbl.onclick = function () { pill.classList.add('open'); loadCountries(); var c = current(); input.value = c ? c.href : ''; input.focus(); input.select(); };
     root.querySelector('.direct').onclick = function () { var c = current(); if (c) location.href = c.href; };
-    root.querySelector('form').onsubmit = function (e) { e.preventDefault(); if (input.value.trim()) location.href = '/go?url=' + encodeURIComponent(input.value.trim()); };
+    root.querySelector('form').onsubmit = function (e) { e.preventDefault(); if (input.value.trim()) location.href = '/go?url=' + encodeURIComponent(input.value.trim()) + (cc.hidden ? '' : '&exit=' + encodeURIComponent(cc.value)); };
     root.querySelector('.x').onclick = function () {
       if (pill.classList.contains('open')) pill.classList.remove('open'); else host.remove();
     };

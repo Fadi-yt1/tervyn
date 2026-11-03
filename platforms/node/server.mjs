@@ -9,6 +9,7 @@
 //   HOST          listen address (default 0.0.0.0)
 //   GATEWAYS      other gateway URLs, comma separated (added to gateways.json)
 //   EXITS=1       offer free exit countries (tests the public free proxy lists)
+//   PROXY_LIST_URL  use the published pre-tested list instead (proxies.json)
 //   REGION        label shown in the gateway list, e.g. "Frankfurt"
 //   TRUST_PROXY=1 read the client IP and scheme from X-Forwarded-* (when behind Caddy)
 //   RATE_LIMIT    requests per minute per IP (default 900)
@@ -21,11 +22,14 @@ import { createGateway } from '../../gateway/core.js';
 import { createUpstream, bridgeWebSocket } from './upstream.mjs';
 import { createMemoryCache } from './cache.mjs';
 import { createExitPool } from './exits.mjs';
+import { createRemoteExits } from '../../gateway/exits-remote.js';
 
 const COMPRESSIBLE = /^(text\/|application\/(javascript|json|xml|xhtml\+xml|manifest\+json|ld\+json)|image\/svg\+xml)/i;
 
 export function createNodeGateway(env = process.env) {
-  const exits = env.EXITS === '1' ? createExitPool() : null;
+  // PROXY_LIST_URL: use the published, pre-tested list. EXITS=1: test free lists on this server.
+  const exits = env.PROXY_LIST_URL ? createRemoteExits({ url: env.PROXY_LIST_URL })
+    : env.EXITS === '1' ? createExitPool() : null;
   const cacheMb = Number(env.CACHE_MB ?? 128);
   const allowPrivate = env.ALLOW_PRIVATE === '1';
   const handler = createGateway({
@@ -121,6 +125,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.PORT || 8080);
   server.listen(port, process.env.HOST || '0.0.0.0', () => {
     console.log(`Tervyn gateway on http://localhost:${port}${exits ? ' (free exit countries on)' : ''}`);
-    exits?.start();
+    exits?.start?.();
   });
 }

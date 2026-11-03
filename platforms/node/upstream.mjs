@@ -165,7 +165,7 @@ export function createUpstream({ allowPrivate = false, exits = null } = {}) {
   return async function upstreamFetch(url, init = {}, meta = {}) {
     const proto = new URL(url).protocol;
     if (meta.exit && exits) {
-      const proxies = exits.pick(meta.exit, 3);
+      const proxies = await exits.pick(meta.exit, 3);
       if (!proxies.length) throw new Error(`no working free exit server in ${meta.exit} right now; pick another exit`);
       const retryable = !init.body;
       let last;

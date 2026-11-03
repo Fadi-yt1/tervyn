@@ -10,3 +10,5 @@ GATEWAYS = ""
 RATE_LIMIT = "900"
 # Abuse contact shown on /__tervyn/about (the deploy workflow fills it from the CONTACT variable)
 CONTACT = ""
+# Pre-tested free proxies by country (made every 30 min by .github/workflows/proxies.yml)
+PROXY_LIST_URL = "https://raw.githubusercontent.com/Fadi-yt1/tervyn/proxies/proxies.json"

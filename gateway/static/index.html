@@ -32,6 +32,10 @@
   .btn:disabled { opacity: .6; cursor: default; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; color: var(--muted); font-size: 14px; }
   .row select { padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); max-width: 100%; }
+  .loc { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
+  .loc label { font-weight: 600; font-size: 15px; }
+  .loc select { flex: 1; max-width: 420px; min-width: 0; font: inherit; font-size: 15px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+  .note { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
   .quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
   .quick button { border: 1px solid var(--line); background: var(--chip); color: var(--text); border-radius: 999px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
   .quick button:hover { border-color: var(--accent); }
@@ -59,15 +63,17 @@
   <h1>Tervyn <span>Web Proxy</span></h1>
   <p class="sub">Open any site through the fastest free gateway. Nothing to install.</p>
 
+  <div class="loc">
+    <label for="exit">Location</label>
+    <select id="exit" aria-describedby="exitNote"><option value="">🌐 Fastest gateway (no country)</option></select>
+  </div>
+  <p class="note" id="exitNote">Pick a country to open sites through a free server there, e.g. the USA or Canada.</p>
   <form class="go" id="go">
     <input id="url" name="url" placeholder="Type a site, e.g. wikipedia.org" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus aria-label="Website address">
     <button class="btn" id="goBtn" type="submit">Go</button>
   </form>
   <div class="row">
     <span id="status">Finding the fastest gateway…</span>
-    <label id="exitWrap" hidden>· Exit:
-      <select id="exit"><option value="">Gateway location</option></select>
-    </label>
   </div>
   <div class="quick" id="quick"></div>
 
@@ -81,7 +87,7 @@
     <ul>
       <li>Gateways run on free hosting tiers around the world. Tervyn tests all of them and picks the fastest; pick another one any time.</li>
       <li>Sites see the gateway's address, not yours. The gateway can see which sites you open and their content, so avoid banking and other sensitive logins.</li>
-      <li>"Exit" countries route through free public proxies (only on gateways that offer them). They're slower and run by unknown people.</li>
+      <li>Countries route through real free public proxies, re-tested every 30 minutes (each must load an HTTPS page with a valid certificate). Secure sites stay encrypted end to end, but these servers are slower and come and go.</li>
       <li>For whole-browser protection, use the <a href="https://github.com/Fadi-yt1/vpn" rel="noreferrer">Tervyn VPN extension</a>.</li>
     </ul>
     <p><a href="/__tervyn/about">Terms, privacy and acceptable use</a></p>
@@ -139,7 +145,7 @@
       var mid = document.createElement('div');
       var name = document.createElement('div'); name.className = 'name'; name.textContent = label(g);
       var meta = document.createElement('div'); meta.className = 'meta';
-      meta.textContent = new URL(g.url).host + (g.info && g.info.exits ? ' · free exit countries' : '') + (g.error ? ' · ' + g.error : '');
+      meta.textContent = new URL(g.url).host + (g.info && g.info.exits ? ' · supports countries' : '') + (g.error ? ' · ' + g.error : '');
       mid.appendChild(name); mid.appendChild(meta);
       var ms = document.createElement('div');
       ms.className = 'ms ' + (g.ms == null ? (g.error ? 'bad' : '') : g.ms < 120 ? 'ok' : g.ms < 350 ? 'warn' : 'bad');
@@ -150,34 +156,61 @@
   }
 
   function update() {
-    var g = gateways.find(function (x) { return x.url === chosen; });
+    var g = routeGateway();
+    var exit = $('exit').value;
     if (!gateways.length) { $('status').textContent = 'No gateways are online yet. Please check back soon.'; }
+    else if (!g && exit) { $('status').textContent = 'Waiting for a gateway that supports countries…'; }
     else if (!g) { $('status').textContent = gateways.some(function (x) { return x.ms == null && !x.error; }) ? 'Finding the fastest gateway…' : 'No gateway answered. Try again in a minute.'; }
-    else $('status').textContent = 'Using ' + label(g) + ' (' + Math.round(g.ms) + ' ms)';
+    else $('status').textContent = 'Using ' + label(g) + ' (' + Math.round(g.ms) + ' ms)' + (exit ? ' · exit ' + flag(exit) + ' ' + (countryNames[exit] || exit) : '');
     $('goBtn').disabled = !g;
     render();
-    loadExits(g);
+    loadExits();
   }
 
-  var exitsFor = '';
-  function loadExits(g) {
-    if (!g || !(g.info && g.info.exits)) { $('exitWrap').hidden = true; exitsFor = ''; return; }
-    if (exitsFor === g.url) return;
-    exitsFor = g.url;
-    fetch(g.url + '/__tervyn/exits', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+  // ---- countries (free proxies by country, from gateways that can use them) ----
+  var FIRST = ['US', 'CA', 'GB', 'DE', 'FR', 'NL', 'JP', 'SG', 'IN', 'BR', 'AU'];
+  function flag(c) { return /^[A-Z]{2}$/.test(c) ? String.fromCodePoint.apply(null, c.split('').map(function (x) { return 0x1f1e6 + x.charCodeAt(0) - 65; })) : '🌐'; }
+  function exitGateways() {
+    return gateways.filter(function (x) { return x.ms != null && x.info && x.info.exits; }).sort(function (a, b) { return a.ms - b.ms; });
+  }
+  var exitsLoaded = false;
+  var countryNames = {};
+  function loadExits() {
+    var eg = exitGateways()[0];
+    if (exitsLoaded || !eg) return;
+    exitsLoaded = true;
+    fetch(eg.url + '/__tervyn/exits', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+      var list = (d.countries || []).slice().sort(function (a, b) {
+        var ia = FIRST.indexOf(a.code), ib = FIRST.indexOf(b.code);
+        if (ia >= 0 || ib >= 0) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+        return a.name.localeCompare(b.name);
+      });
       var sel = $('exit');
       var saved = store.get('tervyn.exit') || '';
       sel.length = 1;
-      (d.countries || []).forEach(function (c) {
+      list.forEach(function (c, i) {
+        if (i === Math.min(FIRST.length, list.filter(function (x) { return FIRST.indexOf(x.code) >= 0; }).length) && i > 0) {
+          var sep = document.createElement('option'); sep.disabled = true; sep.textContent = '──────────'; sel.appendChild(sep);
+        }
         var o = document.createElement('option');
-        o.value = c.code; o.textContent = c.name + ' (' + c.count + (c.ms ? ', ~' + c.ms + ' ms' : '') + ')';
+        o.value = c.code;
+        o.textContent = flag(c.code) + ' ' + c.name + ' — ' + c.count + ' free server' + (c.count === 1 ? '' : 's');
+        countryNames[c.code] = c.name;
         if (c.code === saved) o.selected = true;
         sel.appendChild(o);
       });
-      $('exitWrap').hidden = !(d.countries || []).length;
-    }).catch(function () { $('exitWrap').hidden = true; });
+      $('exitNote').textContent = list.length
+        ? list.length + ' countries with tested free servers. They are slower than the gateways and run by strangers: don\'t log in to anything important.'
+        : 'No tested free servers right now. Browsing still works through the fastest gateway.';
+      update();
+    }).catch(function () { exitsLoaded = false; });
   }
-  $('exit').onchange = function () { store.set('tervyn.exit', this.value); };
+  // With a country picked, go through the fastest gateway that can use free proxies.
+  function routeGateway() {
+    if ($('exit').value) return exitGateways()[0] || null;
+    return gateways.find(function (x) { return x.url === chosen && x.ms != null; }) || null;
+  }
+  $('exit').onchange = function () { store.set('tervyn.exit', this.value); update(); };
 
   function testAll(list) {
     gateways = list.map(function (url) { return { url: url, ms: null }; });
@@ -213,9 +246,11 @@
 
   function go() {
     var v = $('url').value.trim();
-    if (!v || !chosen) return;
-    var exit = $('exitWrap').hidden ? '' : $('exit').value;
-    location.href = chosen + '/go?url=' + encodeURIComponent(v) + '&exit=' + encodeURIComponent(exit);
+    if (!v) return;
+    var g = routeGateway();
+    if (!g) return;
+    var exit = $('exit').value;
+    location.href = g.url + '/go?url=' + encodeURIComponent(v) + '&exit=' + encodeURIComponent(exit);
   }
   $('go').onsubmit = function (e) { e.preventDefault(); go(); };
   $('retest').onclick = load;

@@ -28,6 +28,18 @@ flowchart LR
   G5 -. "exit country" .-> F[Tested free proxy] --> S
 ```
 
+## Countries (USA, Canada and more) through real free proxies
+
+Pick a **Location** on the home page, or in the toolbar on any page, and every site you open goes out through a real free proxy in that country.
+
+- **Where the servers come from:** every 30 minutes, `.github/workflows/proxies.yml` (free on GitHub Actions) downloads about 30 public free-proxy lists. These include ProxyScrape, Geonode, Proxifly, monosans, TheSpeedX and the 18 lists the extension uses. It tests every server.
+- **How a server qualifies:** it must open `https://www.cloudflare.com` with a **valid certificate** twice. That proves it works for secure sites and doesn't tamper with them, and the page reveals its **real country**. Up to 40 of the fastest per country are published as `proxies.json` on the `proxies` branch.
+- **How a request goes through:** the Cloudflare gateway opens a raw TCP connection to a proxy in your country (HTTP CONNECT or SOCKS5), then speaks TLS **directly with the site** through it. The free proxy only relays encrypted bytes it can't read. If a proxy fails, the next one is tried, and dead ones are skipped for 10 minutes.
+- **Which gateways support it:** Cloudflare, Deno and Node gateways (`/__tervyn/exits`). Vercel and Netlify can't open raw connections. When you pick a country, the home page automatically uses the fastest gateway that supports it.
+- **Why not VPN Gate?** vpngate.net and similar sites hand out OpenVPN, L2TP and SSTP VPN servers. Websites, browsers and edge servers can't speak those protocols, so they can't be used here (or in a browser extension). Their desktop VPN client works for that.
+
+Free proxies are slower than the gateways and are run by unknown people. HTTPS keeps the page content private, but don't log in to anything important through them.
+
 ## Try it locally (30 seconds)
 
 ```bash
@@ -171,6 +183,9 @@ Throughput under load (oha / wrk / autocannon).
 gateway/core.js          the gateway: routing, headers, cookies, cache, rate limit (all platforms)
 gateway/rewrite.js       HTML / CSS / header rewriting
 gateway/htmlrewriter.js  streaming HTML rewriting with Cloudflare's HTMLRewriter
+gateway/tunnel.js        countries: HTTP/1.1 through a free proxy over a raw socket (CONNECT / SOCKS5 + TLS)
+gateway/exits-remote.js  reads the published proxies.json
+scripts/validate-proxies.mjs  tests all free proxy lists (run by the proxies workflow)
 gateway/url.js           /p/ URL scheme and private-network guard
 gateway/static/          home page, in-page script + toolbar, service worker (bundled by npm run build)
 platforms/cloudflare/    Workers adapter        (wrangler.toml)

@@ -46,13 +46,13 @@ const PAGE_HEADERS = {
   'permissions-policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
 };
 
-function errorPage(status, title, detail, target) {
+function errorPage(status, title, detail, target, extra = '') {
   const esc = escapeHtml;
   const retry = target ? `<p><a href="${esc(encodeTarget(target))}">Try again</a> · <a href="${esc(target.href)}" rel="noreferrer">Open directly (no proxy)</a></p>` : '';
   return new Response(
     `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>` +
     `<style>body{font:16px/1.5 system-ui,sans-serif;max-width:36rem;margin:4rem auto;padding:0 16px;color:#1d2433;background:#f6f7fb}@media(prefers-color-scheme:dark){body{background:#11141b;color:#e6e9f0}a{color:#8ab4ff}}</style>` +
-    `<h1>${esc(title)}</h1><p>${esc(detail)}</p>${retry}<p><a href="/">Tervyn home</a></p>`,
+    `<h1>${esc(title)}</h1><p>${esc(detail)}</p>${retry}${extra}<p><a href="/">Tervyn home</a></p>`,
     { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } },
   );
 }
@@ -283,7 +283,9 @@ export function createGateway(options = {}) {
       }, { exit, clientIp });
     } catch (e) {
       const msg = abort.signal.aborted ? 'The site took too long to answer.' : String(e?.message || e);
-      return errorPage(502, "Couldn't reach this site", `The gateway could not connect to ${target.host}. ${msg.slice(0, 200)}`, target);
+      const noExit = exit ? `<p><a href="/go?url=${encodeURIComponent(target.href)}&amp;exit=">Browse this site without a country</a> · <a href="/">Pick another country</a></p>` : '';
+      return errorPage(502, exit ? `The ${exit} free servers didn't connect` : "Couldn't reach this site",
+        exit ? msg.slice(0, 300) : `The gateway could not connect to ${target.host}. ${msg.slice(0, 200)}`, target, noExit);
     } finally {
       clearTimeout(timer);
     }

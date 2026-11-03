@@ -6,10 +6,18 @@ import zlib from 'node:zlib';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { attachWsEcho, wsRoundTrip } from './helpers/ws-echo.mjs';
+import { startFakeProxies } from './helpers/fake-proxies.mjs';
+const fake = await startFakeProxies();
 
 const listen = (srv) => new Promise((r) => srv.listen(0, '127.0.0.1', () => r(srv.address().port)));
 const site = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
+  if (u.pathname === '/proxies.json') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ names: { US: 'United States' }, proxies: [
+      { proto: 'http', address: '127.0.0.1', port: fake.connectPort, code: 'US', ms: 5 },
+      { proto: 'socks5', address: '127.0.0.1', port: fake.socksPort, code: 'CA', ms: 6 }] }));
+  }
   if (u.pathname === '/redirect') { res.writeHead(302, { location: '/landing' }); return res.end(); }
   if (u.pathname === '/cookie') { res.writeHead(200, { 'set-cookie': ['a=1; Path=/', 'b=2; Path=/; HttpOnly'] }); return res.end('ok'); }
   if (u.pathname === '/gz') { res.writeHead(200, { 'content-type': 'text/plain', 'content-encoding': 'gzip' }); return res.end(zlib.gzipSync('hello compressed')); }
@@ -58,6 +66,14 @@ async function check(name, base) {
   assert.match(await (await fetch(p('/latin'))).text(), /café/, 'non-UTF-8 page decoded');
   assert.equal(await wsRoundTrip(`${base.replace('http', 'ws')}/p/http/127.0.0.1:${sitePort}/ws`), 'echo:hi', 'WebSocket through gateway');
   assert.match((await fetch(base + '/__tervyn/about')).headers.get('content-security-policy'), /frame-ancestors 'none'/);
+  // Exit countries through (fake) free proxies, over the runtime's raw TCP sockets.
+  const countries = (await (await fetch(base + '/__tervyn/exits')).json()).countries.map((c) => c.code);
+  assert.deepEqual(countries, ['CA', 'US']);
+  for (const cc of ['US', 'CA']) {
+    const r = await fetch(p('/'), { headers: { cookie: `tervyn_exit=${cc}` } });
+    assert.equal(r.headers.get('x-tervyn-exit'), cc, `routed through the ${cc} proxy`);
+    assert.match(await r.text(), new RegExp(`href="${S}/next"`));
+  }
   const red = await fetch(p('/redirect'), { redirect: 'manual' });
   assert.equal(red.status, 302);
   assert.equal(red.headers.get('location'), `/p/http/127.0.0.1:${sitePort}/landing`);
@@ -71,10 +87,10 @@ async function check(name, base) {
 const runs = [];
 if (process.env.DENO_BIN) {
   runs.push(['deno', 8791, () => spawn(process.env.DENO_BIN, ['run', '--allow-net', '--allow-env', 'platforms/deno/main.js'],
-    { env: { ...process.env, PORT: '8791', ALLOW_PRIVATE: '1' }, stdio: 'ignore' })]);
+    { env: { ...process.env, PORT: '8791', ALLOW_PRIVATE: '1', PROXY_LIST_URL: `http://127.0.0.1:${sitePort}/proxies.json` }, stdio: 'ignore' })]);
 }
 if (process.env.WRANGLER_BIN) {
-  runs.push(['cloudflare', 8792, () => spawn(process.env.WRANGLER_BIN, ['dev', '--port', '8792', '--ip', '127.0.0.1', '--var', 'ALLOW_PRIVATE:1', '--show-interactive-dev-session=false'],
+  runs.push(['cloudflare', 8792, () => spawn(process.env.WRANGLER_BIN, ['dev', '--port', '8792', '--ip', '127.0.0.1', '--var', 'ALLOW_PRIVATE:1', '--var', `PROXY_LIST_URL:http://127.0.0.1:${sitePort}/proxies.json`, '--show-interactive-dev-session=false'],
     { env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, stdio: process.env.DEBUG ? 'inherit' : 'ignore' })]);
 }
 if (!runs.length) console.log('platforms: no runtimes given (set DENO_BIN and/or WRANGLER_BIN), skipped');
@@ -84,4 +100,5 @@ for (const [name, port, start] of runs) {
   try { await check(name, `http://127.0.0.1:${port}`); } catch (e) { failed = true; console.error(`platforms: ${name} FAILED:`, e.message); } finally { child.kill(); }
 }
 site.close();
+fake.close();
 process.exit(failed ? 1 : 0);

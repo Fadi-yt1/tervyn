@@ -2,6 +2,8 @@
 //   deno run --allow-net --allow-env platforms/deno/main.js
 // On Deno Deploy, link the GitHub repo and set the entrypoint to this file.
 import { createGateway } from '../../gateway/core.js';
+import { exitFetch } from '../../gateway/tunnel.js';
+import { createRemoteExits } from '../../gateway/exits-remote.js';
 
 const env = (k) => { try { return Deno.env.get(k) || ''; } catch { return ''; } };
 
@@ -38,8 +40,21 @@ async function websocket(request, target, headers) {
   return response;
 }
 
+async function openSocket(hostname, port) {
+  const wrap = (conn) => ({
+    readable: conn.readable,
+    writable: conn.writable,
+    close: () => { try { conn.close(); } catch { /* closed */ } },
+    startTls: async (servername) => wrap(await Deno.startTls(conn, { hostname: servername })),
+  });
+  return wrap(await Deno.connect({ hostname, port }));
+}
+const exits = env('PROXY_LIST_URL') ? createRemoteExits({ url: env('PROXY_LIST_URL') }) : null;
+
 const gateway = createGateway({
   platform: 'deno',
+  exits,
+  fetch: exitFetch({ baseFetch: (url, init) => fetch(url, init), openSocket, exits }),
   gateways: env('GATEWAYS').split(','),
   rateLimit: Number(env('RATE_LIMIT') || 900),
   contact: env('CONTACT'),
