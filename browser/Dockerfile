@@ -7,7 +7,7 @@ ENV NODE_ENV=production PORT=8090 PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY browser/package.json browser/package-lock.json ./browser/
 RUN cd browser && npm ci --omit=dev \
  && npx playwright install --with-deps chromium \
- && apt-get update && apt-get install -y --no-install-recommends xvfb fonts-noto-color-emoji fonts-liberation \
+ && apt-get update && apt-get install -y --no-install-recommends xvfb xauth fonts-noto-color-emoji fonts-liberation \
  && rm -rf /var/lib/apt/lists/*
 COPY gateway ./gateway
 COPY platforms/node ./platforms/node
