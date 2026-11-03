@@ -1,6 +1,9 @@
 # Prints what each live gateway answers (status, headers, start of body). Run by hand.
 name: diagnose
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/diagnose.yml"]
 jobs:
   diagnose:
     runs-on: ubuntu-latest
