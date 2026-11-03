@@ -25,7 +25,7 @@ jobs:
             for cc in US CA DE; do
               for site in https://example.com/ https://www.wikipedia.org/ https://api.ipify.org/?format=json; do
                 out=$(curl -s -m 60 -D - -o body.txt -H "cookie: tervyn_exit=$cc" "$gw/p/${site/:\/\//\/}")
-                echo "$cc $site -> $(echo "$out" | head -1 | tr -d '\r') exit=$(echo "$out" | grep -i '^x-tervyn-exit' | tr -d '\r' | cut -d' ' -f2) body: $(head -c 120 body.txt | tr '\n' ' ')"
+                echo "$cc $site -> $(echo "$out" | head -1 | tr -d '\r') exit=$(echo "$out" | grep -i '^x-tervyn-exit' | tr -d '\r' | cut -d' ' -f2) body: $(sed -e 's/<[^>]*>/ /g' body.txt | tr -s ' \n' ' ' | head -c 400)"
               done
             done
           done
