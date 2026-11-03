@@ -57,6 +57,38 @@ function errorPage(status, title, detail, target, extra = '') {
   );
 }
 
+// Bot checks (Cloudflare challenge and similar) only pass in a real browser on the real
+// site address, never through a web proxy. Spot them and explain instead of showing a broken page.
+function isBotCheck(res) {
+  const h = res.headers;
+  if ((h.get('cf-mitigated') || '').toLowerCase() === 'challenge') return true;
+  if (res.status === 403 && /akamai|imperva|incapsula|datadome|perimeterx|kasada/i.test(`${h.get('server')} ${h.get('x-datadome') ? 'datadome' : ''} ${h.get('x-iinfo') ? 'incapsula' : ''}`)) return true;
+  return false;
+}
+
+function botCheckPage(target, exit) {
+  const esc = escapeHtml;
+  const host = esc(target.hostname);
+  const other = exit ? `<a class="b" href="/go?url=${encodeURIComponent(target.href)}&amp;exit=">Try without a country</a>` : '';
+  return new Response(
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${host} blocks web proxies</title>` +
+    `<style>body{font:16px/1.55 system-ui,sans-serif;max-width:38rem;margin:3.5rem auto;padding:0 16px;color:#1d2433;background:#f6f7fb}h1{font-size:24px}` +
+    `.b{display:inline-block;margin:6px 8px 0 0;padding:9px 14px;border-radius:10px;background:#4f7cff;color:#fff;text-decoration:none}.b.s{background:#e3e8f3;color:#1d2433}` +
+    `@media(prefers-color-scheme:dark){body{background:#11141b;color:#e6e9f0}.b.s{background:#273041;color:#e6e9f0}a{color:#8ab4ff}}</style>` +
+    `<h1>${host} blocks web proxies</h1>` +
+    `<p>This site is protected by a bot check (for example Cloudflare's "verify you are human"). That check only works when your own browser talks to ${host} directly, so it fails through any web proxy, with or without a country.</p>` +
+    `<p><b>What works:</b></p><ul><li><b>Open it directly</b>: your real connection, no proxy.</li>` +
+    `<li><b>The Tervyn VPN extension</b>: it routes your whole browser, so the check runs normally and can pass.</li></ul>` +
+    `<p><a class="b" href="${esc(target.href)}" rel="noreferrer">Open ${host} directly</a><a class="b s" href="https://github.com/Fadi-yt1/vpn" rel="noreferrer">Get the extension</a>${other}<a class="b s" href="/">Tervyn home</a></p>`,
+    { status: 403, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-tervyn-blocked': 'bot-check' } },
+  );
+}
+
+function stoppedPage(target, exit, e) {
+  const extra = exit ? `<p><a href="/go?url=${encodeURIComponent(target.href)}&amp;exit=">Load it without a country</a> (free servers often drop out)</p>` : '';
+  return errorPage(502, 'The page stopped loading', `The connection to ${target.host} dropped before the page finished (${String(e?.message || e).slice(0, 120)}). Try again.`, target, extra);
+}
+
 function getCookie(header, name) {
   for (const part of (header || '').split(';')) {
     const [k, ...v] = part.trim().split('=');
@@ -134,7 +166,7 @@ export function createGateway(options = {}) {
     try {
       res = await route(request, ctx);
     } catch (e) {
-      res = errorPage(500, 'Something went wrong', 'The gateway hit an unexpected error. Please try again.', null);
+      res = errorPage(500, 'Something went wrong', `The gateway hit an unexpected error (${String(e?.message || e).slice(0, 160)}). Please try again.`, null);
       try { console.error('tervyn: unexpected error', e?.stack || e); } catch { /* no console */ }
     }
     if (res.status === 101 || res.webSocket) return res; // WebSocket handshakes pass untouched
@@ -270,24 +302,33 @@ export function createGateway(options = {}) {
 
     const started = Date.now();
     let upstream;
-    const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(new Error('the site took too long to answer')), timeoutMs);
+    // Waits for the site's response headers (not the body, which may stream for long).
+    const fetchOnce = async (withBody) => {
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(new Error('The site took too long to answer.')), timeoutMs);
+      try {
+        return await upstreamFetch(target.href, {
+          method: request.method,
+          headers,
+          body: withBody ? request.body : undefined,
+          redirect: 'manual',
+          signal: abort.signal,
+          ...(withBody ? { duplex: 'half' } : {}),
+        }, { exit, clientIp });
+      } catch (e) {
+        if (abort.signal.aborted) throw new Error('The site took too long to answer.');
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
     try {
-      upstream = await upstreamFetch(target.href, {
-        method: request.method,
-        headers,
-        body: hasBody ? request.body : undefined,
-        redirect: 'manual',
-        signal: abort.signal,
-        ...(hasBody ? { duplex: 'half' } : {}),
-      }, { exit, clientIp });
+      upstream = await fetchOnce(hasBody);
     } catch (e) {
-      const msg = abort.signal.aborted ? 'The site took too long to answer.' : String(e?.message || e);
+      const msg = String(e?.message || e);
       const noExit = exit ? `<p><a href="/go?url=${encodeURIComponent(target.href)}&amp;exit=">Browse this site without a country</a> · <a href="/">Pick another country</a></p>` : '';
       return errorPage(502, exit ? `The ${exit} free servers didn't connect` : "Couldn't reach this site",
         exit ? msg.slice(0, 300) : `The gateway could not connect to ${target.host}. ${msg.slice(0, 200)}`, target, noExit);
-    } finally {
-      clearTimeout(timer);
     }
     const upstreamMs = Date.now() - started;
 
@@ -315,6 +356,11 @@ export function createGateway(options = {}) {
 
     const type = upstream.headers.get('content-type') || '';
     const dest = request.headers.get('sec-fetch-dest') || '';
+    const isPageLoad = (!dest || dest === 'document' || dest === 'iframe') && /text\/html/i.test(type) && request.method === 'GET';
+    if (isPageLoad && isBotCheck(upstream)) {
+      try { await upstream.body?.cancel(); } catch { /* ignore */ }
+      return botCheckPage(target, exit);
+    }
     const isHtml = /text\/html|application\/xhtml/i.test(type) && dest !== 'script' && dest !== 'style';
     const isCss = /text\/css/i.test(type);
 
@@ -328,13 +374,23 @@ export function createGateway(options = {}) {
         const streamed = options.streamHtml.transform(new Response(upstream.body, { status, headers: { 'content-type': type || 'text/html' } }), target.href, inject);
         return new Response(streamed.body, { status, headers: out });
       }
-      const html = await readText(upstream, type);
+      let html;
+      try {
+        html = await readText(upstream, type);
+      } catch (e) {
+        // The connection dropped mid-page (common with free servers). Try once more.
+        if (request.method !== 'GET') return stoppedPage(target, exit, e);
+        try { html = await readText(await fetchOnce(false), type); } catch (e2) { return stoppedPage(target, exit, e2); }
+      }
       out.set('content-type', 'text/html; charset=utf-8');
       out.set('x-tervyn-rewriter', 'buffer');
       return new Response(rewriteHtml(html, target.href, { inject }), { status, headers: out });
     }
     if (isCss) {
-      const css = rewriteCss(await readText(upstream, type), target.href);
+      let css;
+      try { css = rewriteCss(await readText(upstream, type), target.href); } catch (e) {
+        try { css = rewriteCss(await readText(await fetchOnce(false), type), target.href); } catch (e2) { return new Response('/* stylesheet failed to load */', { status: 502, headers: { 'content-type': 'text/css' } }); }
+      }
       out.set('content-type', 'text/css; charset=utf-8');
       const res = new Response(css, { status, headers: out });
       if (useCache && isCacheable(request, upstream, type)) {

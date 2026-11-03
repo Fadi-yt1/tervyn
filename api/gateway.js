@@ -20,11 +20,14 @@ const gateway = createGateway({
 
 export default function handler(request) {
   // vercel.json rewrites "/<path>" to "/api/gateway?tervyn_path=/<path>". Put the original URL back.
+  // Depending on the platform version, request.url is either /api/gateway?tervyn_path=… or the
+  // original URL with tervyn_path appended. Either way it must never reach the site.
   const url = new URL(request.url);
   const original = url.searchParams.get('tervyn_path');
-  if (original != null && url.pathname.startsWith('/api/gateway')) {
+  if (original != null) {
     url.searchParams.delete('tervyn_path');
-    const fixed = new URL(original + url.search, url.origin);
+    const path = url.pathname.startsWith('/api/gateway') ? original : url.pathname;
+    const fixed = new URL(path + url.search, url.origin);
     const init = { method: request.method, headers: request.headers };
     if (!['GET', 'HEAD'].includes(request.method)) { init.body = request.body; init.duplex = 'half'; }
     request = new Request(fixed, init);

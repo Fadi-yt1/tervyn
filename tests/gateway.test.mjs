@@ -25,6 +25,13 @@ before(async () => {
       case '/latin':
         res.writeHead(200, { 'content-type': 'text/html' });
         return res.end(Buffer.concat([Buffer.from('<html><head><meta charset="windows-1252"></head><body>caf'), Buffer.from([0xe9]), Buffer.from('</body></html>')]));
+      case '/challenge':
+        res.writeHead(403, { 'content-type': 'text/html; charset=UTF-8', 'cf-mitigated': 'challenge', server: 'cloudflare' });
+        return res.end('<html><head><title>Just a moment...</title></head><body>challenge</body></html>');
+      case '/drop':
+        res.writeHead(200, { 'content-type': 'text/html', 'content-length': '5000' });
+        res.write('<html><head></head><body>partial');
+        return setTimeout(() => res.destroy(), 20);
       case '/redirect':
         res.writeHead(302, { location: '/landing?x=1' });
         return res.end();
@@ -212,4 +219,22 @@ test('own pages carry security headers; about page and favicon exist', async () 
   assert.equal((await fetch(gwUrl + '/__tervyn/about')).status, 200);
   assert.equal((await fetch(gwUrl + '/favicon.ico')).headers.get('content-type'), 'image/svg+xml');
   assert.equal((await (await fetch(gwUrl + '/__tervyn/health')).json()).ok, true);
+});
+
+test('bot-check pages are explained instead of shown broken', async () => {
+  const r = await fetch(p('/challenge'), { headers: { 'sec-fetch-dest': 'document' } });
+  assert.equal(r.status, 403);
+  assert.equal(r.headers.get('x-tervyn-blocked'), 'bot-check');
+  const html = await r.text();
+  assert.match(html, /blocks web proxies/);
+  assert.match(html, /Open 127\.0\.0\.1 directly/);
+  // Background requests (fetch/XHR) get the site's own answer.
+  const bg = await fetch(p('/challenge'), { headers: { 'sec-fetch-dest': 'empty' } });
+  assert.equal(bg.headers.get('x-tervyn-blocked'), null);
+});
+
+test('a page that breaks off mid-way gives a clear error, not a crash', async () => {
+  const r = await fetch(p('/drop'));
+  assert.equal(r.status, 502);
+  assert.match(await r.text(), /The page stopped loading/);
 });

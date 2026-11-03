@@ -164,8 +164,10 @@
     var t = current();
     var host = document.createElement('tervyn-bar');
     var root = host.attachShadow({ mode: 'closed' });
-    var flag = function (c) { return /^[A-Z]{2}$/.test(c) ? String.fromCodePoint.apply(null, c.split('').map(function (x) { return 0x1f1e6 + x.charCodeAt(0) - 65; })) : ''; };
-    var region = cfg.x ? flag(cfg.x) + ' ' + cfg.x : (cfg.p || 'gateway');
+    // Windows has no flag emoji (shows "us"), so flags are only used elsewhere.
+    var noFlags = /Windows/.test(navigator.userAgent);
+    var flag = function (c) { return !noFlags && /^[A-Z]{2}$/.test(c) ? String.fromCodePoint.apply(null, c.split('').map(function (x) { return 0x1f1e6 + x.charCodeAt(0) - 65; })) + ' ' : ''; };
+    var region = cfg.x ? 'via ' + flag(cfg.x) + cfg.x : (cfg.p || 'gateway');
     root.innerHTML =
       '<style>' +
       ':host{all:initial;position:fixed;left:12px;bottom:12px;z-index:2147483647;font:13px/1.3 system-ui,-apple-system,Segoe UI,sans-serif}' +
@@ -182,7 +184,7 @@
       '<div class="pill"><span class="dot"></span>' +
       '<span class="lbl" title="Tervyn web proxy"></span>' +
       '<form><input name="u" autocomplete="off" spellcheck="false" aria-label="Address"><button class="go" type="submit">Go</button>' +
-      '<select class="cc" aria-label="Country" hidden><option value="">🌐 No country</option></select>' +
+      '<select class="cc" aria-label="Country" hidden><option value="">No country (fastest)</option></select>' +
       '<a class="home" href="/__tervyn/home" title="Tervyn home">Home</a><a class="direct" rel="noreferrer" title="Leave the proxy and open this page directly">Direct</a></form>' +
       '<button class="x" type="button" title="Hide toolbar" aria-label="Hide toolbar">✕</button></div>';
     var pill = root.querySelector('.pill');
@@ -194,10 +196,10 @@
     function loadCountries() {
       if (ccLoaded) return;
       ccLoaded = true;
-      fetch('/__tervyn/exits').then(function (r) { return r.json(); }).then(function (d) {
+      realFetch.call(window, '/__tervyn/exits', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (d) {
         (d.countries || []).forEach(function (c) {
           var o = document.createElement('option');
-          o.value = c.code; o.textContent = flag(c.code) + ' ' + c.name;
+          o.value = c.code; o.textContent = flag(c.code) + c.name;
           if (c.code === cfg.x) o.selected = true;
           cc.appendChild(o);
         });

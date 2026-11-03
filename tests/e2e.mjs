@@ -71,6 +71,13 @@ try {
   }));
   assert.equal(wsReply, 'echo:page', 'WebSocket from page code goes through the gateway');
 
+  // The toolbar's country menu asks the gateway itself, not the site (bug: it used to go to the site).
+  const asked = page.waitForRequest((r) => r.url() === `${gwOrigin}/__tervyn/exits`, { timeout: 5000 });
+  const box = await page.locator('tervyn-bar').boundingBox();
+  await page.mouse.click(box.x + 60, box.y + box.height / 2);
+  await asked;
+  assert.ok(!log.some((l) => l.path.includes('__tervyn')), 'toolbar requests never reach the site');
+
   // Sites can't replace our service worker.
   const blocked = await page.evaluate(() => navigator.serviceWorker.register('/evil-sw.js').then(() => false, () => true));
   assert.equal(blocked, true, 'site service worker registration is refused');

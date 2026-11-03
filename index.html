@@ -67,7 +67,7 @@
 
   <div class="loc">
     <label for="exit">Location</label>
-    <select id="exit" aria-describedby="exitNote"><option value="">🌐 Fastest gateway (no country)</option></select>
+    <select id="exit" aria-describedby="exitNote"><option value="">Fastest gateway (no country)</option></select>
   </div>
   <p class="note" id="exitNote">Pick a country to open sites through a free server there, e.g. the USA or Canada.</p>
   <form class="go" id="go">
@@ -163,7 +163,7 @@
     if (!gateways.length) { $('status').textContent = 'No gateways are online yet. Please check back soon.'; }
     else if (!g && exit) { $('status').textContent = 'Waiting for a gateway that supports countries…'; }
     else if (!g) { $('status').textContent = gateways.some(function (x) { return x.ms == null && !x.error; }) ? 'Finding the fastest gateway…' : 'No gateway answered. Try again in a minute.'; }
-    else $('status').textContent = 'Using ' + label(g) + ' (' + Math.round(g.ms) + ' ms)' + (exit ? ' · exit ' + flag(exit) + ' ' + (countryNames[exit] || exit) : '');
+    else $('status').textContent = 'Using ' + label(g) + ' (' + Math.round(g.ms) + ' ms)' + (exit ? ' · via ' + (countryNames[exit] || exit) : '');
     $('goBtn').disabled = !g;
     render();
     loadExits();
@@ -171,7 +171,9 @@
 
   // ---- countries (free proxies by country, from gateways that can use them) ----
   var FIRST = ['US', 'CA', 'GB', 'DE', 'FR', 'NL', 'JP', 'SG', 'IN', 'BR', 'AU'];
-  function flag(c) { return /^[A-Z]{2}$/.test(c) ? String.fromCodePoint.apply(null, c.split('').map(function (x) { return 0x1f1e6 + x.charCodeAt(0) - 65; })) : '🌐'; }
+  // Windows can't draw flag emoji (it shows letters), so skip them there.
+  var NO_FLAGS = /Windows/.test(navigator.userAgent);
+  function flag(c) { return NO_FLAGS ? '' : /^[A-Z]{2}$/.test(c) ? String.fromCodePoint.apply(null, c.split('').map(function (x) { return 0x1f1e6 + x.charCodeAt(0) - 65; })) : '🌐'; }
   function exitGateways() {
     return gateways.filter(function (x) { return x.ms != null && x.info && x.info.exits; }).sort(function (a, b) { return a.ms - b.ms; });
   }
@@ -196,7 +198,7 @@
         }
         var o = document.createElement('option');
         o.value = c.code;
-        o.textContent = flag(c.code) + ' ' + c.name + ' — ' + c.count + ' free server' + (c.count === 1 ? '' : 's');
+        o.textContent = (flag(c.code) ? flag(c.code) + ' ' : '') + c.name + ' — ' + c.count + ' free server' + (c.count === 1 ? '' : 's');
         countryNames[c.code] = c.name;
         if (c.code === saved) o.selected = true;
         sel.appendChild(o);
