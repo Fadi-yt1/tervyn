@@ -34,10 +34,26 @@ SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/stdout}
 log() { echo "::group::$*" 2>/dev/null || echo "== $*"; }
 end() { echo "::endgroup::" 2>/dev/null || true; }
 
+cf() { curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'content-type: application/json' "$@"; }
+
 deploy_cloudflare() {
   [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || return 0
   log "Cloudflare Workers"
-  local out url
+  local out url sub name api=https://api.cloudflare.com/client/v4
+  if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+    CLOUDFLARE_ACCOUNT_ID=$(cf "$api/accounts" | jq -r '.result[0].id // empty'); export CLOUDFLARE_ACCOUNT_ID
+  fi
+  echo "account: ${CLOUDFLARE_ACCOUNT_ID:-unknown}"
+  # Every account needs a workers.dev subdomain once; register one if missing.
+  sub=$(cf "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain // empty')
+  if [ -z "$sub" ]; then
+    for name in "tervyn-$OWNER" "tervyn-$OWNER-$((RANDOM % 9000 + 1000))" "tervyn-$((RANDOM * RANDOM))"; do
+      r=$(cf -X PUT "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" -d "{\"subdomain\":\"$name\"}")
+      if [ "$(echo "$r" | jq -r '.success')" = "true" ]; then sub=$name; echo "registered $sub.workers.dev"; break; fi
+      echo "subdomain $name: $(echo "$r" | jq -c '.errors')"
+    done
+  fi
+  echo "workers.dev subdomain: ${sub:-none}"
   out=$($WRANGLER deploy 2>&1); echo "$out"
   url=$(echo "$out" | grep -oE 'https://[a-z0-9.-]+\.workers\.dev' | head -1)
   end
@@ -49,7 +65,12 @@ deploy_vercel() {
   log "Vercel"
   local dep host alias
   local out
-  out=$($VERCEL deploy --prod --yes --token "$VERCEL_TOKEN" 2>&1); echo "$out" | tail -25
+  # Deploy only what Vercel needs, so it doesn't mistake the Dockerfile/render.yaml for a container app.
+  local stage; stage=$(mktemp -d)/tervyn
+  mkdir -p "$stage/platforms"
+  cp -r api gateway scripts vercel.json package.json gateways.json "$stage/"
+  cp -r platforms/static "$stage/platforms/"
+  out=$(cd "$stage" && $VERCEL deploy --prod --yes --token "$VERCEL_TOKEN" 2>&1); echo "$out" | tail -25
   dep=$(echo "$out" | grep -oE 'https://[^ ]+\.vercel\.app' | tail -1)
   echo "deployment: $dep"
   if [ -n "$dep" ]; then
@@ -73,9 +94,17 @@ deploy_netlify() {
   id=$(curl -fsS -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "$api/sites?name=$NETLIFY_SITE_NAME&filter=all&per_page=100" \
     | jq -r --arg n "$NETLIFY_SITE_NAME" '[.[] | select(.name == $n)][0].id // empty')
   if [ -z "$id" ]; then
-    echo "creating site $NETLIFY_SITE_NAME"
-    id=$(curl -fsS -X POST -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" -H 'content-type: application/json' \
-      -d "{\"name\":\"$NETLIFY_SITE_NAME\"}" "$api/sites" | jq -r '.id // empty')
+    local slug r
+    slug=$(curl -fsS -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" "$api/accounts" | jq -r '.[0].slug // empty')
+    echo "creating site $NETLIFY_SITE_NAME in team ${slug:-?}"
+    for path in "$slug/sites" "sites"; do
+      [ "$path" = "/sites" ] && continue
+      r=$(curl -sS -X POST -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN" -H 'content-type: application/json' \
+        -d "{\"name\":\"$NETLIFY_SITE_NAME\"}" "$api/$path")
+      id=$(echo "$r" | jq -r '.id // empty' 2>/dev/null)
+      [ -n "$id" ] && break
+      echo "POST $path: $(echo "$r" | head -c 300)"
+    done
   fi
   if [ -z "$id" ]; then echo "::warning::Could not find or create Netlify site $NETLIFY_SITE_NAME (name taken? set NETLIFY_SITE_NAME)"; end; return 0; fi
   local out
@@ -117,8 +146,12 @@ echo "| Gateway | Ping | Proxy test |" >> "$SUMMARY"
 echo "|---|---|---|" >> "$SUMMARY"
 OK=0
 for gw in $(node -e 'console.log(require("./gateways.json").gateways.join(" "))'); do
-  ping=$(curl -fsS -m 20 "$gw/__tervyn/ping" | jq -r '.platform // "?"' 2>/dev/null || echo "down")
-  code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$gw/p/https/example.com/")
+  for try in 1 2 3 4 5 6 7 8; do
+    ping=$(curl -fsS -m 20 "$gw/__tervyn/ping" | jq -r '.platform // "?"' 2>/dev/null || echo "down")
+    code=$(curl -s -m 30 -o /dev/null -w '%{http_code}' "$gw/p/https/example.com/")
+    [ "$code" = "200" ] && break
+    echo "$gw: attempt $try got HTTP $code, retrying in 20s"; sleep 20
+  done
   echo "| $gw | ${ping:-down} | HTTP $code |" >> "$SUMMARY"
   [ "$code" = "200" ] && OK=$((OK + 1))
 done
