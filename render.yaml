@@ -18,4 +18,3 @@ services:
         value: Render
       - key: CACHE_MB
         value: "64"
-

@@ -20,28 +20,3 @@ jobs:
           npm i --no-save playwright@1.63.0
           npx playwright install --with-deps chromium
           npm run e2e
-      - name: Remote browser (real Chrome, driven through its streamed screen)
-        run: |
-          cd browser && npm ci
-          npx playwright install --with-deps chromium
-          node test.mjs
-  browser-image:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Build the remote browser image and check it starts
-        run: |
-          docker build -f browser/Dockerfile -t tervyn-browser .
-          docker run -d --name tb -p 8090:8090 -e ACCESS_KEY=ci-key tervyn-browser
-          ok=""; for i in $(seq 1 30); do curl -fsS localhost:8090/health && { ok=1; break; }; sleep 2; done
-          docker logs tb 2>&1 | tail -30
-          [ -n "$ok" ] || exit 1
-          curl -fsS "localhost:8090/api/servers?key=ci-key"
-          # A real session: start Chrome in the container and open a page.
-          cd browser && npm ci && node -e '
-            const { WebSocket } = globalThis;
-            const ws = new WebSocket("ws://localhost:8090/ws?key=ci-key&w=800&h=600");
-            let frames = 0, ready = false;
-            ws.onmessage = (e) => { if (typeof e.data === "string") { const m = JSON.parse(e.data); if (m.t === "ready") { ready = true; ws.send(JSON.stringify({ t: "go", url: "https://example.com" })); } if (m.t === "error") { console.error(m.msg); process.exit(1); } } else frames++; };
-            setTimeout(() => { console.log("ready:", ready, "frames:", frames); process.exit(ready && frames > 0 ? 0 : 1); }, 20000);
-          '

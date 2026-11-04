@@ -142,7 +142,6 @@ node -e '
   const data = JSON.parse(fs.readFileSync(file, "utf8"));
   const add = process.argv.slice(1).map((u) => u.trim().replace(/\/+$/, "")).filter((u) => /^https:\/\//.test(u));
   data.gateways = [...new Set([...(data.gateways || []), ...add])];
-  if (/^https:\/\//.test(process.env.REMOTE_BROWSER_URL || "")) data.browser = process.env.REMOTE_BROWSER_URL.replace(/\/+$/, "");
   fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
   console.log("gateways:", data.gateways.join(" ") || "(none)");
 ' "${FOUND[@]}" $EXTRA

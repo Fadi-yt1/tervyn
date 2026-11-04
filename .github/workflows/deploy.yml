@@ -12,7 +12,6 @@
 #   EXTRA_GATEWAYS      URLs of gateways deployed elsewhere (Deno Deploy, Render, VMs)
 #   NETLIFY_SITE_NAME   Netlify site name (default tervyn-<owner>)
 #   CONTACT             abuse contact email shown on the About page
-#   REMOTE_BROWSER_URL  address of your Tervyn Browser (e.g. https://tervyn-browser.onrender.com)
 name: deploy
 on:
   workflow_dispatch:
@@ -33,7 +32,6 @@ jobs:
       NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
       PRIVATE_PROXIES: ${{ secrets.PRIVATE_PROXIES }}
       EXTRA_GATEWAYS: ${{ vars.EXTRA_GATEWAYS }}
-      REMOTE_BROWSER_URL: ${{ vars.REMOTE_BROWSER_URL }}
       NETLIFY_SITE_NAME: ${{ vars.NETLIFY_SITE_NAME }}
       CONTACT: ${{ vars.CONTACT }}
     steps:
