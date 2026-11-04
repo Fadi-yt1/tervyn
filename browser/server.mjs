@@ -10,11 +10,13 @@
 //   PORT             default 8090
 //   ACCESS_KEY       required: the key you type on the page (keeps strangers out)
 //   PRIVATE_PROXIES  your proxies (any layout: ip:port:user:pass, user:pass@ip:port, ...)
-//   MAX_SESSIONS     open browsers at once (default 2; each needs ~200-400 MB)
-//   IDLE_MINUTES     close a session after this long without input (default 10)
-//   HEADLESS=1       run without a display (default: headed, needs Xvfb as in the Dockerfile)
+//   MAX_SESSIONS     open sessions at once (default: as many as the memory allows, ~350 MB each)
+//   IDLE_MINUTES     close a session after this long without input (default 0 = never)
+//   HEADLESS=1       run without a window (default: a normal Chrome window; on Linux servers
+//                    that needs a display, e.g. Xvfb as in the Dockerfile)
 import http from 'node:http';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { parsePrivateProxies } from '../platforms/node/private-exits.mjs';
@@ -26,9 +28,13 @@ const { WebSocketServer } = require('ws');
 
 export function createRemoteBrowser(env = process.env) {
   const accessKey = String(env.ACCESS_KEY || '');
-  const maxSessions = Number(env.MAX_SESSIONS || 2);
-  const idleMs = Number(env.IDLE_MINUTES || 10) * 60000;
-  const headless = env.HEADLESS === '1' || !env.DISPLAY;
+  // Default: as many sessions as memory allows (keep ~600 MB for the system and Chrome itself).
+  const autoMax = Math.max(1, Math.floor((os.totalmem() / 1048576 - 600) / 350));
+  const maxSessions = Number(env.MAX_SESSIONS) > 0 ? Number(env.MAX_SESSIONS) : autoMax;
+  const idleMs = Number(env.IDLE_MINUTES || 0) * 60000; // 0 = sessions stay open until you close the tab
+  // Windows and macOS always have a screen; Linux only when DISPLAY is set (desktop or Xvfb).
+  const hasScreen = process.platform === 'win32' || process.platform === 'darwin' || !!env.DISPLAY;
+  const headless = env.HEADLESS === '1' || !hasScreen;
   const allowPrivate = env.ALLOW_PRIVATE === '1'; // tests only
   const app = readFileSync(new URL('./app.html', import.meta.url), 'utf8');
 
@@ -58,7 +64,9 @@ export function createRemoteBrowser(env = process.env) {
       // Sessions on one of your servers set their own proxy per context.
       args: ['--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check', '--no-proxy-server',
         // No background traffic of Chrome's own (updates, Google services): saves proxy data.
-        '--disable-background-networking', '--disable-component-update', '--disable-sync', '--metrics-recording-only', '--no-pings'],
+        '--disable-background-networking', '--disable-component-update', '--disable-sync', '--metrics-recording-only', '--no-pings',
+        // On your own computer, keep the server's Chrome windows minimized.
+        ...(process.platform === 'win32' || process.platform === 'darwin' ? ['--start-minimized'] : [])],
     }).then((b) => { browser = b; return b; }).finally(() => { launching = null; });
     return launching;
   }
@@ -158,7 +166,12 @@ export function createRemoteBrowser(env = process.env) {
     await watch(await context.newPage());
 
     let idle;
-    const touch = () => { clearTimeout(idle); idle = setTimeout(() => { sendJson({ t: 'error', msg: 'Closed after being idle. Reconnect to start again.' }); end(); }, idleMs); idle.unref?.(); };
+    const touch = () => {
+      clearTimeout(idle);
+      if (!idleMs) return;
+      idle = setTimeout(() => { sendJson({ t: 'error', msg: 'Closed after being idle. Reconnect to start again.' }); end(); }, idleMs);
+      idle.unref?.();
+    };
     session.end = end;
     async function end() {
       if (session.closed) return;
@@ -227,7 +240,10 @@ export function createRemoteBrowser(env = process.env) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   if (!process.env.ACCESS_KEY) { console.error('Set ACCESS_KEY (the key you will type on the page).'); process.exit(1); }
-  const { server } = createRemoteBrowser();
+  const remote = createRemoteBrowser();
+  const { server } = remote;
   const port = Number(process.env.PORT || 8090);
   server.listen(port, process.env.HOST || '0.0.0.0', () => console.log(`Tervyn remote browser on http://localhost:${port}`));
+  // Close Chrome cleanly on Ctrl+C / stop.
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { remote.close().finally(() => process.exit(0)); });
 }

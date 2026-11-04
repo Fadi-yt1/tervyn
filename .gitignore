@@ -6,3 +6,8 @@ node_modules/
 *.log
 .env
 browser/node_modules/
+browser/proxies/*.txt
+!browser/proxies/README.txt
+browser/.access-key
+browser/cloudflared
+browser/cloudflared.exe
